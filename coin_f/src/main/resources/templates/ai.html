@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org" data-bs-theme="dark">
+<head th:replace="~{fragments/layout :: head('AI 분석 / 백테스트')}"></head>
+<body>
+<div class="fi-shell">
+	<aside th:replace="~{fragments/layout :: sidebar}"></aside>
+
+	<main class="fi-main">
+		<header th:replace="~{fragments/layout :: topbar}"></header>
+
+		<div class="fi-content">
+			<div class="fi-page-tabs mb-3">
+				<a href="/ai" class="btn btn-sm fi-seg active"><i class="bi bi-cpu"></i> AI 분석</a>
+				<a href="/backtest" class="btn btn-sm fi-seg"><i class="bi bi-graph-up-arrow"></i> 백테스트</a>
+			</div>
+
+			<!-- 엔진 정보 + 재생성 -->
+			<div class="d-flex align-items-center gap-2 flex-wrap mb-3">
+				<span class="fi-engine"><i class="bi bi-cpu"></i> <span th:text="${engine}">엔진</span></span>
+				<span class="fi-hint">1시간마다 자동 생성</span>
+				<button type="button" class="btn btn-sm fi-seg ms-auto" id="regenBtn">
+					<i class="bi bi-arrow-clockwise"></i> 지금 다시 생성
+				</button>
+			</div>
+			<div id="regenMsg" class="fi-sample-note d-none"></div>
+
+			<div th:if="${market == null}" class="fi-sample-note">
+				<i class="bi bi-hourglass-split"></i>
+				첫 리포트는 서버 시작 약 1.5분 후(시세·OI 수집 완료 후) 생성됩니다. 잠시 후 새로고침하거나 '지금 다시 생성'을 눌러 주세요.
+			</div>
+
+			<!-- 시장 전체 -->
+			<div class="fi-card" th:if="${market != null}">
+				<div class="fi-card-head">
+					<div>
+						<div class="fi-card-title">시장 전체 분석</div>
+						<div class="fi-card-sub">BTC · 상위 30종목 OI · 전 종목 펀딩비 · 청산 · 시그널 종합</div>
+					</div>
+				</div>
+				<div th:replace="~{fragments/report :: reportBody(${market})}"></div>
+			</div>
+
+			<!-- 종목별 -->
+			<div class="fi-card mt-3" th:if="${!symbolReports.isEmpty()}">
+				<div class="fi-card-head">
+					<div>
+						<div class="fi-card-title">종목별 분석</div>
+						<div class="fi-card-sub">가격대 · OI · 펀딩비 · 롱숏 · 시장가 매수 비중 · 청산 · 시그널</div>
+					</div>
+					<ul class="nav fi-tabs" role="tablist">
+						<li th:each="e, st : ${symbolReports}">
+							<button th:classappend="${st.first} ? 'active'" data-bs-toggle="tab" type="button"
+									th:data-bs-target="'#rep-' + ${e.key}" th:text="${#strings.replace(e.key, 'USDT', '')}">BTC</button>
+						</li>
+					</ul>
+				</div>
+				<div class="tab-content">
+					<div th:each="e, st : ${symbolReports}" class="tab-pane fade" th:classappend="${st.first} ? 'show active'"
+						 th:id="'rep-' + ${e.key}">
+						<div class="mb-2"><a th:href="@{/coin/{s}(s=${e.key})}" class="fi-more small">차트 보기 <i class="bi bi-chevron-right"></i></a></div>
+						<div th:replace="~{fragments/report :: reportBody(${e.value})}"></div>
+					</div>
+				</div>
+			</div>
+
+			<!-- 이력 -->
+			<div class="fi-card mt-3" th:if="${!#lists.isEmpty(history)}">
+				<div class="fi-card-head">
+					<div>
+						<div class="fi-card-title">시장 분석 이력</div>
+						<div class="fi-card-sub">최근 12건 · 과열 수준 변화</div>
+					</div>
+				</div>
+				<div class="table-responsive">
+					<table class="fi-table fi-table-head">
+						<thead><tr><th>시각</th><th>과열 여부</th><th>요약</th></tr></thead>
+						<tbody>
+							<tr th:each="h : ${history}">
+								<td class="text-muted num" th:text="${@fmt.dateTime(h.createdAt)}">11/11 10:00</td>
+								<td><span class="fi-heat fi-heat-sm" th:classappend="'heat-' + ${h.levelColor()}" th:text="${h.report.overheatLevel}">중립</span></td>
+								<td class="fi-history-summary" th:text="${#strings.abbreviate(h.report.summary, 110)}">요약</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</div>
+
+			<!-- 백테스트 바로가기 -->
+			<a href="/backtest" class="fi-card fi-planned mt-3 text-decoration-none d-flex" style="border-style: solid">
+				<i class="bi bi-graph-up-arrow"></i>
+				<span class="text-body">백테스트 <i class="bi bi-chevron-right small"></i></span>
+				<small>시그널 규칙을 과거 데이터에 다시 적용해 발생 횟수 · 승률 · 평균 수익률 · 최대 낙폭(MDD) · 기간별 성과를 검증합니다.</small>
+			</a>
+
+			<footer class="fi-footer">
+				분석은 수집된 지표를 기계적으로 해석한 참고 정보이며 미래 가격을 예측하지 않습니다. 투자 판단의 책임은 이용자에게 있습니다.
+			</footer>
+		</div>
+	</main>
+</div>
+
+<th:block th:replace="~{fragments/layout :: scripts}"></th:block>
+<script>
+	document.getElementById('regenBtn').addEventListener('click', async () => {
+		const btn = document.getElementById('regenBtn');
+		const msg = document.getElementById('regenMsg');
+		btn.disabled = true;
+		try {
+			const res = await fetch('/api/ai/regenerate', { method: 'POST' });
+			const r = await res.json();
+			msg.textContent = r.message;
+			msg.classList.remove('d-none');
+			if (r.ok) setTimeout(() => location.reload(), 800);
+		} catch (e) {
+			msg.textContent = '요청에 실패했습니다.';
+			msg.classList.remove('d-none');
+		} finally {
+			btn.disabled = false;
+		}
+	});
+</script>
+</body>
+</html>

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<body>
+<table>
+	<!--
+		오늘의 코인 표 1행.
+		c: CoinRow, rank: 순위 (pinned 면 무시), showScore: HOT 점수 열 표시, pinned: 상단 고정 행(BTC)
+	-->
+	<tr th:fragment="coinRow(c, rank, showScore, pinned)"
+		th:classappend="${pinned} ? 'fi-pinned-row'"
+		th:data-rank="${pinned} ? null : ${rank}" th:data-asset="${c.asset}" th:data-change="${c.change}"
+		th:data-range="${c.range}" th:data-volume="${c.volumeUsd}"
+		th:data-mcap="${c.marketCapKrw}" th:data-turnover="${c.turnover}"
+		th:data-funding="${c.funding8h}" th:data-oi="${c.oiChange24h}" th:data-score="${c.score}">
+		<td class="fi-rank num">
+			<i th:if="${pinned}" class="bi bi-pin-angle-fill text-warning" title="기준 코인 (상단 고정)"></i>
+			<span th:unless="${pinned}" th:text="${rank}">1</span>
+		</td>
+		<td>
+			<div class="d-flex align-items-center gap-2">
+				<a th:href="@{/coin/{s}(s=${c.symbol})}" class="fi-sym-link" th:text="${c.asset}"
+				   th:title="${c.asset} + ' 코인 상세 분석'">BTC</a>
+				<!-- TradingView 무기한 선물 표기: BTCUSDT.P -->
+				<button type="button" class="fi-copy" th:data-copy="${c.symbol} + '.P'"
+						th:title="${c.symbol} + '.P 복사'" th:aria-label="${c.symbol} + '.P 복사'">
+					<i class="bi bi-copy"></i>
+				</button>
+				<a class="fi-copy" th:href="'https://www.binance.com/en/futures/' + ${c.symbol}" target="_blank" rel="noopener"
+				   title="바이낸스 선물 차트 (새 창)" aria-label="바이낸스 선물 차트 (새 창)"><i class="bi bi-box-arrow-up-right"></i></a>
+				<span class="fi-hint text-truncate fi-coin-name" th:if="${c.name != null}" th:text="${c.name}">Bitcoin</span>
+			</div>
+		</td>
+		<td><canvas class="fi-spark" width="96" height="28" th:data-symbol="${c.symbol}"></canvas></td>
+		<td class="text-end num" th:text="${@fmt.price(c.price)}">0</td>
+		<td class="text-end num fw-semibold" th:classappend="${@fmt.tone(c.change)}" th:text="${@fmt.pct(c.change)}">0%</td>
+		<td class="text-end num" th:text="${@fmt.rate(c.range)}">0%</td>
+		<td class="text-end num" th:text="${c.volumeKrw != null} ? ${@fmt.krw(c.volumeKrw)} : ${@fmt.usd(c.volumeUsd)}"
+			th:title="${@fmt.usd(c.volumeUsd)} + ' · 체결 ' + ${#numbers.formatInteger(c.trades, 1, 'COMMA')} + '건'">0</td>
+		<td class="text-end num">
+			<span th:text="${@fmt.krw(c.marketCapKrw)}">-</span>
+			<span class="fi-hint" th:if="${c.marketCapRank != null and c.marketCapRank > 0}" th:text="'#' + ${c.marketCapRank}"></span>
+		</td>
+		<td class="text-end num" th:text="${c.turnover != null} ? ${@fmt.rate(c.turnover)} : '-'">-</td>
+		<td class="text-end num" th:classappend="${c.funding8h != null} ? ${@fmt.tone(c.funding8h)} : 'text-muted'"
+			th:text="${c.funding8h != null} ? ${@fmt.funding(c.funding8h)} : '-'">-</td>
+		<td class="text-end num" th:classappend="${@fmt.toneOrMuted(c.oiChange24h)}" th:text="${@fmt.pctOrDash(c.oiChange24h)}">-</td>
+		<td th:if="${showScore}" class="fi-score-cell">
+			<div class="d-flex align-items-center gap-2">
+				<span class="num fw-semibold" th:text="${#numbers.formatDecimal(c.score, 1, 0)}">0</span>
+				<span class="fi-score-track"><span class="fi-score-bar" th:style="'width:' + ${c.score} + '%'"></span></span>
+			</div>
+		</td>
+		<td>
+			<div class="fi-tags">
+				<span th:if="${pinned}" class="tag-pin">기준</span>
+				<span th:each="t : ${c.tags}" th:text="${t}"
+					  th:classappend="${t == '급등' or t == '강세'} ? 'tag-up' : (${t == '급락' or t == '약세'} ? 'tag-down' : '')">태그</span>
+			</div>
+		</td>
+	</tr>
+</table>
+</body>
+</html>

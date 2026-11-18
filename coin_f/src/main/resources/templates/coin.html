@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org" data-bs-theme="dark">
+<head th:replace="~{fragments/layout :: head('코인 상세 분석')}"></head>
+<body>
+<div class="fi-shell">
+	<aside th:replace="~{fragments/layout :: sidebar}"></aside>
+
+	<main class="fi-main" th:with="c=${coin}">
+		<header th:replace="~{fragments/layout :: topbar}"></header>
+
+		<div class="fi-content">
+			<!-- 종목 선택 -->
+			<div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+				<a th:each="s : ${symbols}" th:href="@{/coin/{s}(s=${s})}" class="btn btn-sm fi-seg"
+				   th:classappend="${s == symbol} ? 'active'" th:text="${@fmt.base(s)} + ' / USDT'">BTC / USDT</a>
+				<span th:unless="${#lists.contains(symbols, symbol)}" class="btn btn-sm fi-seg active"
+					  th:text="${@fmt.base(symbol)} + ' / USDT'">ZEC / USDT</span>
+				<!-- 그 밖의 코인 (시가총액 1조 이상, 거래대금 순) -->
+				<select class="form-select form-select-sm fi-select ms-1" id="coinPicker" aria-label="다른 코인 선택"
+						th:if="${!#lists.isEmpty(coinOptions)}">
+					<option value="">다른 코인 선택…</option>
+					<option th:each="o : ${coinOptions}" th:unless="${#lists.contains(symbols, o)}"
+							th:value="${o}" th:text="${@fmt.base(o)}" th:selected="${o == symbol}">ZEC</option>
+				</select>
+			</div>
+
+			<div th:if="${c.ticker == null}" class="fi-sample-note">
+				<span class="spinner-border spinner-border-sm me-1"></span>
+				데이터를 수집하고 있습니다. 잠시 후 새로고침해 주세요.
+			</div>
+
+			<!-- 현재 상태 -->
+			<div class="row g-3">
+				<div class="col-lg-4">
+					<!-- 속성값 안에서는 @빈 호출이 금지(Thymeleaf 3.1 보안 제한) → th:with 로 먼저 계산 -->
+					<div class="fi-card h-100" th:data-ticker="${symbol}" th:with="baseAsset=${@fmt.base(symbol)}">
+						<div class="d-flex align-items-center gap-2">
+							<span class="fi-coin-dot" th:data-coin="${baseAsset}"></span>
+							<strong th:text="${symbol}">BTCUSDT</strong>
+							<span class="text-muted small">무기한 선물</span>
+						</div>
+						<th:block th:if="${c.ticker != null}">
+							<div class="d-flex align-items-baseline gap-2 mt-2">
+								<span class="fi-coin-price num js-price" th:text="${@fmt.price(c.ticker.price)}">0</span>
+								<span class="fi-badge js-change" th:classappend="${@fmt.tone(c.ticker.changePercent24h)}"
+									  th:text="${@fmt.pct(c.ticker.changePercent24h)}">+0.00%</span>
+							</div>
+							<div class="fi-ticker-meta">24h 거래대금 <span class="num js-vol" th:text="${@fmt.usd(c.ticker.quoteVolume24h)}"></span></div>
+						</th:block>
+					</div>
+				</div>
+
+				<div class="col-6 col-lg-2">
+					<div class="fi-card h-100">
+						<div class="fi-card-label">펀딩비</div>
+						<th:block th:if="${c.funding != null}">
+							<div class="fi-stat-value num" th:classappend="${@fmt.tone(c.funding.rate)}"
+								 th:text="${@fmt.funding(c.funding.rate)}">-</div>
+							<div class="fi-hint">다음 정산 <span class="num" th:text="${@fmt.countdown(c.funding.nextFundingTime)}"></span></div>
+						</th:block>
+						<div th:if="${c.funding == null}" class="fi-stat-value text-muted">-</div>
+					</div>
+				</div>
+
+				<div class="col-6 col-lg-2">
+					<div class="fi-card h-100">
+						<div class="fi-card-label">미결제약정</div>
+						<th:block th:if="${c.openInterest != null}">
+							<div class="fi-stat-value num" th:text="${@fmt.usd(c.openInterest.openInterestUsd)}">-</div>
+							<div class="fi-hint">24h <span class="num" th:classappend="${@fmt.tone(c.openInterest.changePercent24h)}"
+								  th:text="${@fmt.pct(c.openInterest.changePercent24h)}"></span></div>
+						</th:block>
+						<div th:if="${c.openInterest == null}" class="fi-stat-value text-muted">수집 중</div>
+					</div>
+				</div>
+
+				<div class="col-6 col-lg-2">
+					<div class="fi-card h-100">
+						<div class="fi-card-label">롱 · 숏 (계정)</div>
+						<th:block th:if="${c.longShort != null}">
+							<div class="fi-stat-value num">
+								<span class="text-up" th:text="${#numbers.formatDecimal(c.longShort.longPercent, 1, 1)}">50</span><span class="text-muted fs-6"> / </span><span class="text-down" th:text="${#numbers.formatDecimal(c.longShort.shortPercent, 1, 1)}">50</span>
+							</div>
+							<div class="fi-ls-bar fi-ls-bar-sm mt-1">
+								<div class="fi-ls-long" th:style="'width:' + ${c.longShort.longPercent} + '%'"></div>
+								<div class="fi-ls-short"></div>
+							</div>
+						</th:block>
+						<div th:if="${c.longShort == null}" class="fi-stat-value text-muted">수집 중</div>
+					</div>
+				</div>
+
+				<div class="col-6 col-lg-2">
+					<div class="fi-card h-100">
+						<div class="fi-card-label">청산 1h / 24h</div>
+						<div class="fi-stat-value num">
+							<span th:text="${@fmt.usd(c.liq1h.totalUsd())}">$0</span><span class="text-muted fs-6"> / </span><span class="fs-6" th:text="${@fmt.usd(c.liq24h.totalUsd())}">$0</span>
+						</div>
+						<div class="fi-liq-split num">
+							<span class="liq-long" th:text="'롱 ' + ${@fmt.usd(c.liq24h.longUsd)}"></span>
+							<span class="liq-short" th:text="'숏 ' + ${@fmt.usd(c.liq24h.shortUsd)}"></span>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- 캔들 차트 -->
+			<div class="fi-card mt-3">
+				<div class="fi-card-head">
+					<div>
+						<div class="fi-card-title">가격</div>
+						<div class="fi-card-sub">캔들 · 거래대금 · 10초마다 갱신</div>
+					</div>
+					<div class="btn-group btn-group-sm" id="candleInterval">
+						<button type="button" class="btn fi-seg" data-interval="1m">1분</button>
+						<button type="button" class="btn fi-seg" data-interval="5m">5분</button>
+						<button type="button" class="btn fi-seg active" data-interval="15m">15분</button>
+						<button type="button" class="btn fi-seg" data-interval="1h">1시간</button>
+					</div>
+				</div>
+				<div id="candleChart" class="fi-candle-wrap"></div>
+			</div>
+
+			<!-- 매수·매도 거래량 -->
+			<div class="fi-card mt-3">
+				<div class="fi-card-head">
+					<div>
+						<div class="fi-card-title">매수 · 매도 거래량</div>
+						<div class="fi-card-sub">시장가(테이커) 기준 · 최근 60개 캔들 · 위 차트와 같은 구간</div>
+					</div>
+					<div class="fi-taker-summary num" id="takerSummary"></div>
+				</div>
+				<div class="fi-chart-wrap fi-chart-sm"><canvas id="takerChart"></canvas></div>
+			</div>
+
+			<!-- 추이 -->
+			<div class="d-flex justify-content-between align-items-center mt-4 mb-2">
+				<div class="fi-section-title">지표 추이 <span class="fi-hint" id="historySource">1시간 단위 · DB 저장 데이터</span></div>
+				<div class="btn-group btn-group-sm" id="historyRange">
+					<button type="button" class="btn fi-seg" data-days="3">3일</button>
+					<button type="button" class="btn fi-seg active" data-days="7">7일</button>
+					<button type="button" class="btn fi-seg" data-days="30">30일</button>
+				</div>
+			</div>
+
+			<div class="row g-3">
+				<div class="col-xl-6">
+					<div class="fi-card h-100">
+						<div class="fi-card-head">
+							<div>
+								<div class="fi-card-title">미결제약정(OI)</div>
+								<div class="fi-card-sub">OI(노란 영역 · 왼쪽 축) · 가격(흰 선 · 오른쪽 축)</div>
+							</div>
+							<div class="fi-chart-stat num" id="oiStat"></div>
+						</div>
+						<div class="fi-chart-wrap fi-chart-md"><canvas id="oiChart"></canvas></div>
+					</div>
+				</div>
+				<div class="col-xl-6">
+					<div class="fi-card h-100">
+						<div class="fi-card-head">
+							<div>
+								<div class="fi-card-title">펀딩비 추이</div>
+								<div class="fi-card-sub">정산 확정값 · ±0.03% 이상 과열</div>
+							</div>
+							<div class="fi-chart-stat num" id="fundingStat"></div>
+						</div>
+						<div class="fi-chart-wrap fi-chart-md"><canvas id="fundingChart"></canvas></div>
+					</div>
+				</div>
+				<div class="col-xl-6">
+					<div class="fi-card h-100">
+						<div class="fi-card-head">
+							<div>
+								<div class="fi-card-title">롱 · 숏 비율 추이</div>
+								<div class="fi-card-sub">롱 계정 비율 · 점선 = 평상시(70%) / 과열 기준(80%)</div>
+							</div>
+							<div class="fi-chart-stat num" id="lsStat"></div>
+						</div>
+						<div class="fi-chart-wrap fi-chart-md"><canvas id="lsChart"></canvas></div>
+					</div>
+				</div>
+				<div class="col-xl-6">
+					<div class="fi-card h-100">
+						<div class="fi-card-head">
+							<div>
+								<div class="fi-card-title">AI 분석</div>
+								<div class="fi-card-sub">이 종목의 최신 분석 리포트</div>
+							</div>
+							<a th:href="@{/ai}" class="small fi-more">전체 보기 <i class="bi bi-chevron-right"></i></a>
+						</div>
+						<th:block th:if="${aiReport != null}">
+							<div class="d-flex align-items-center gap-2 mb-2">
+								<span class="fi-heat" th:classappend="'heat-' + ${aiReport.levelColor()}" th:text="${aiReport.report.overheatLevel}">중립</span>
+								<span class="fi-hint" th:text="${aiReport.report.overheatReason}"></span>
+							</div>
+							<p class="fi-report-summary small" th:text="${aiReport.report.summary}">요약</p>
+							<div class="fi-scenario sc-BASE small" th:each="sc : ${aiReport.report.scenarios}" th:if="${sc.direction == 'BASE'}">
+								<div class="fi-scenario-title"><i class="bi bi-compass"></i> <span th:text="${sc.title}"></span></div>
+								<span th:text="${sc.text}"></span>
+							</div>
+							<div class="fi-hint mt-2" th:text="${@fmt.dateTime(aiReport.createdAt)} + ' 생성 · ' + ${aiReport.model}
+									+ (${aiReport.id == null} ? ' · 즉석 분석(저장 안 함, 10분 캐시)' : '')"></div>
+						</th:block>
+						<div th:if="${aiReport == null}" class="text-muted small py-4 text-center">
+							분석 리포트를 준비 중입니다. 시세·OI 수집이 끝나면(서버 시작 약 1.5분 후) 표시됩니다.
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<footer class="fi-footer">
+				캔들은 Binance 실시간 조회, 지표 추이는 DB 저장 데이터(추적 상위 30종목)이며 그 외 코인은 Binance 에서 직접 조회합니다(5분 캐시). 본 서비스의 정보는 투자 권유가 아니며 투자 판단의 책임은 이용자에게 있습니다.
+			</footer>
+		</div>
+	</main>
+</div>
+
+<th:block th:replace="~{fragments/layout :: scripts}"></th:block>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<script th:inline="javascript">
+	window.COIN_CFG = { symbol: /*[[${symbol}]]*/ 'BTCUSDT' };
+</script>
+<script th:src="@{/js/coin.js}"></script>
+<script>
+	FI.liveTickers(5000);
+	// 다른 코인 선택 → 해당 코인 상세로 이동
+	const picker = document.getElementById('coinPicker');
+	if (picker) picker.addEventListener('change', () => { if (picker.value) location.href = '/coin/' + picker.value; });
+</script>
+</body>
+</html>

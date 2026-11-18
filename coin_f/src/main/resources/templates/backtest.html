@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org" data-bs-theme="dark">
+<head th:replace="~{fragments/layout :: head('AI 분석 / 백테스트')}"></head>
+<body>
+<div class="fi-shell">
+	<aside th:replace="~{fragments/layout :: sidebar}"></aside>
+
+	<main class="fi-main">
+		<header th:replace="~{fragments/layout :: topbar}"></header>
+
+		<div class="fi-content">
+			<div class="fi-page-tabs mb-3">
+				<a href="/ai" class="btn btn-sm fi-seg"><i class="bi bi-cpu"></i> AI 분석</a>
+				<a href="/backtest" class="btn btn-sm fi-seg active"><i class="bi bi-graph-up-arrow"></i> 백테스트</a>
+			</div>
+
+			<p class="fi-lead">
+				DB에 쌓인 1시간 단위 이력(가격 · OI · 롱숏 · 펀딩비)에 <strong>실시간과 같은 시그널 규칙</strong>을 과거 시점마다 다시 적용해,
+				시그널이 났을 때 진입했다면 어땠는지 검증합니다. 시그널 확인 후 <strong>다음 1시간봉 시가</strong>에 진입하므로 미래 데이터는 쓰지 않습니다.
+			</p>
+
+			<!-- 조건 -->
+			<form method="post" action="/backtest" class="fi-card" id="btForm">
+				<div class="fi-card-head">
+					<div>
+						<div class="fi-card-title">백테스트 조건</div>
+						<div class="fi-card-sub">대량 청산은 과거 청산 이력이 수집 시작 이후뿐이라 제외</div>
+					</div>
+				</div>
+				<div class="row g-3 align-items-end">
+					<div class="col-6 col-md-4 col-xl-2">
+						<label class="fi-card-label d-block mb-1">시그널 유형</label>
+						<select name="type" class="form-select form-select-sm fi-select w-100">
+							<option value="ALL" th:selected="${form.signalType == null}">전체 유형</option>
+							<option th:each="t : ${types}" th:value="${t}" th:text="${t.label}"
+									th:selected="${form.signalType == t}">유형</option>
+						</select>
+					</div>
+					<div class="col-6 col-md-4 col-xl-2">
+						<label class="fi-card-label d-block mb-1">종목</label>
+						<select name="symbol" class="form-select form-select-sm fi-select w-100">
+							<option value="ALL" th:selected="${form.symbol == null}">전체 종목</option>
+							<option th:each="s : ${symbolOptions}" th:value="${s}" th:text="${@fmt.base(s)}"
+									th:selected="${form.symbol == s}">BTC</option>
+						</select>
+					</div>
+					<div class="col-6 col-md-4 col-xl-1">
+						<label class="fi-card-label d-block mb-1">기간</label>
+						<select name="days" class="form-select form-select-sm fi-select w-100">
+							<option th:each="d : ${dayOptions}" th:value="${d}" th:text="${d} + '일'"
+									th:selected="${form.days == d}">30일</option>
+						</select>
+					</div>
+					<div class="col-6 col-md-4 col-xl-1">
+						<label class="fi-card-label d-block mb-1">보유 시간</label>
+						<select name="hold" class="form-select form-select-sm fi-select w-100">
+							<option th:each="h : ${holds}" th:value="${h}" th:text="${h} + '시간'"
+									th:selected="${form.holdHours == h}">4시간</option>
+						</select>
+					</div>
+					<div class="col-12 col-md-4 col-xl-2">
+						<label class="fi-card-label d-block mb-1">진입 방향</label>
+						<select name="mode" class="form-select form-select-sm fi-select w-100">
+							<option th:each="m : ${modes}" th:value="${m}" th:text="${m.label}"
+									th:selected="${form.mode == m}">역추세</option>
+						</select>
+					</div>
+					<div class="col-4 col-md-2 col-xl-1">
+						<label class="fi-card-label d-block mb-1">익절 %</label>
+						<input type="number" name="tp" step="0.1" min="0" max="50" placeholder="없음"
+							   class="form-control form-control-sm fi-select w-100" th:value="${form.takeProfitPct}">
+					</div>
+					<div class="col-4 col-md-2 col-xl-1">
+						<label class="fi-card-label d-block mb-1">손절 %</label>
+						<input type="number" name="sl" step="0.1" min="0" max="50" placeholder="없음"
+							   class="form-control form-control-sm fi-select w-100" th:value="${form.stopLossPct}">
+					</div>
+					<div class="col-4 col-md-2 col-xl-1">
+						<label class="fi-card-label d-block mb-1" title="진입+청산 왕복 (바이낸스 시장가 0.04% × 2)">수수료 %</label>
+						<input type="number" name="fee" step="0.01" min="0" max="1"
+							   class="form-control form-control-sm fi-select w-100" th:value="${form.feePct}">
+					</div>
+					<div class="col-12 col-md-2 col-xl-1">
+						<button type="submit" class="btn btn-sm fi-seg active w-100" id="btSubmit">
+							<i class="bi bi-play-fill"></i> 실행
+						</button>
+					</div>
+				</div>
+			</form>
+
+			<div th:if="${notFound}" class="fi-sample-note mt-3">
+				<i class="bi bi-exclamation-circle"></i> 요청한 백테스트 결과를 찾을 수 없습니다.
+			</div>
+			<div th:if="${result == null and !notFound}" class="fi-card text-muted text-center py-5 mt-3">
+				조건을 고르고 <strong>실행</strong>을 누르면 결과가 여기에 표시됩니다.
+			</div>
+
+			<th:block th:if="${result != null}" th:with="r=${result}, s=${result.summary}">
+				<!-- 실행 정보 -->
+				<div class="d-flex align-items-center gap-2 flex-wrap mt-3 mb-2 small">
+					<span class="fi-engine num" th:text="'#' + ${r.runId}">#1</span>
+					<span class="text-muted num"
+						  th:text="${@fmt.date(r.from)} + ' ~ ' + ${@fmt.date(r.to)} + ' · ' + ${r.symbolsCovered} + '종목 데이터'">기간</span>
+					<span class="fi-signal-type" th:text="${r.params.signalType != null} ? ${r.params.signalType.label} : '전체 유형'">유형</span>
+					<span class="fi-signal-type" th:text="${r.params.symbol != null} ? ${@fmt.base(r.params.symbol)} : '전체 종목'">종목</span>
+					<span class="fi-signal-type" th:text="${r.params.holdHours} + '시간 보유'">4시간</span>
+					<span class="fi-signal-type" th:text="${r.params.mode.label}">역추세</span>
+					<span class="fi-signal-type" th:if="${r.params.takeProfitPct != null}" th:text="'익절 ' + ${r.params.takeProfitPct} + '%'">익절</span>
+					<span class="fi-signal-type" th:if="${r.params.stopLossPct != null}" th:text="'손절 ' + ${r.params.stopLossPct} + '%'">손절</span>
+					<span class="text-muted" th:text="'수수료 ' + ${r.params.feePct} + '%'">수수료</span>
+					<span class="text-muted ms-auto" th:if="${r.openSkipped > 0}"
+						  th:text="'보유 기간이 아직 끝나지 않은 시그널 ' + ${r.openSkipped} + '건 제외'">미청산 제외</span>
+				</div>
+
+				<!-- 핵심 지표 -->
+				<div class="fi-card fi-stats fi-stats-5">
+					<div class="fi-stat">
+						<div class="fi-card-label">시그널(거래) 수</div>
+						<div class="fi-stat-value num" th:text="${s.count} + '건'">0건</div>
+						<div class="fi-hint num" th:text="'승 ' + ${s.wins} + ' · 패 ' + ${s.count - s.wins}">승 0 · 패 0</div>
+					</div>
+					<div class="fi-stat">
+						<div class="fi-card-label">승률</div>
+						<div class="fi-stat-value num" th:classappend="${s.count == 0} ? 'text-muted' : (${s.winRate >= 50} ? 'text-up' : 'text-down')"
+							 th:text="${@fmt.rate(s.winRate)}">0%</div>
+						<div class="fi-hint num" th:text="'손익비 ' + (${s.profitFactor != null} ? ${#numbers.formatDecimal(s.profitFactor, 1, 2)} : '-')">손익비</div>
+					</div>
+					<div class="fi-stat">
+						<div class="fi-card-label">평균 수익률 (거래당)</div>
+						<div class="fi-stat-value num" th:classappend="${@fmt.tone(s.avgReturn)}" th:text="${@fmt.pct(s.avgReturn)}">0%</div>
+						<div class="fi-hint num" th:text="'평균 이익 ' + ${@fmt.pct(s.avgWin)} + ' · 평균 손실 ' + ${@fmt.pct(s.avgLoss)}">평균</div>
+					</div>
+					<div class="fi-stat">
+						<div class="fi-card-label">누적 수익률 (단순 합)</div>
+						<div class="fi-stat-value num" th:classappend="${@fmt.tone(s.totalReturn)}" th:text="${@fmt.pct(s.totalReturn)}">0%</div>
+						<div class="fi-hint num" th:text="'최고 ' + ${@fmt.pct(s.best)} + ' · 최저 ' + ${@fmt.pct(s.worst)}">최고/최저</div>
+					</div>
+					<div class="fi-stat">
+						<div class="fi-card-label">최대 낙폭 (MDD)</div>
+						<div class="fi-stat-value num text-down" th:text="${s.maxDrawdown > 0} ? '-' + ${#numbers.formatDecimal(s.maxDrawdown, 1, 2)} + '%p' : '0%p'">0%p</div>
+						<div class="fi-hint">누적 곡선 고점 대비</div>
+					</div>
+				</div>
+
+				<div class="row g-3 mt-0">
+					<div class="col-xl-7">
+						<div class="fi-card h-100">
+							<div class="fi-card-head">
+								<div>
+									<div class="fi-card-title">누적 수익 곡선</div>
+									<div class="fi-card-sub">청산 시각 순 · 거래마다 같은 금액 진입 가정 (%p)</div>
+								</div>
+							</div>
+							<div class="fi-chart-wrap fi-chart-md"><canvas id="equityChart"></canvas></div>
+						</div>
+					</div>
+					<div class="col-xl-5">
+						<div class="fi-card h-100">
+							<div class="fi-card-head">
+								<div>
+									<div class="fi-card-title">기간별 성과</div>
+									<div class="fi-card-sub">진입 주(월요일 시작) 기준 수익률 합</div>
+								</div>
+							</div>
+							<div class="fi-chart-wrap fi-chart-md"><canvas id="weeklyChart"></canvas></div>
+						</div>
+					</div>
+				</div>
+
+				<div class="row g-3 mt-0">
+					<!-- 보유 시간별 -->
+					<div class="col-xl-4">
+						<div class="fi-card h-100">
+							<div class="fi-card-head">
+								<div>
+									<div class="fi-card-title">보유 시간별 비교</div>
+									<div class="fi-card-sub">같은 조건에서 보유 시간만 바꿔 실행</div>
+								</div>
+							</div>
+							<table class="fi-table fi-table-head">
+								<thead><tr><th>보유</th><th class="text-end">거래</th><th class="text-end">승률</th><th class="text-end">평균</th><th class="text-end">합계</th></tr></thead>
+								<tbody>
+									<tr th:each="g : ${r.byHold}" th:classappend="${g.key == '' + r.params.holdHours} ? 'fi-row-active'">
+										<td th:text="${g.label}">4시간</td>
+										<td class="text-end num" th:text="${g.count}">0</td>
+										<td class="text-end num" th:text="${g.count > 0} ? ${@fmt.rate(g.winRate)} : '-'">-</td>
+										<td class="text-end num" th:classappend="${@fmt.tone(g.avgReturn)}" th:text="${g.count > 0} ? ${@fmt.pct(g.avgReturn)} : '-'">-</td>
+										<td class="text-end num" th:classappend="${@fmt.tone(g.totalReturn)}" th:text="${g.count > 0} ? ${@fmt.pct(g.totalReturn)} : '-'">-</td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+					</div>
+					<!-- 유형별 -->
+					<div class="col-xl-4">
+						<div class="fi-card h-100">
+							<div class="fi-card-head">
+								<div>
+									<div class="fi-card-title">유형별 성과</div>
+									<div class="fi-card-sub">발생 횟수 순</div>
+								</div>
+							</div>
+							<div th:if="${#lists.isEmpty(r.byType)}" class="text-muted text-center py-3">거래 없음</div>
+							<table class="fi-table fi-table-head" th:unless="${#lists.isEmpty(r.byType)}">
+								<thead><tr><th>유형</th><th class="text-end">거래</th><th class="text-end">승률</th><th class="text-end">평균</th><th class="text-end">합계</th></tr></thead>
+								<tbody>
+									<tr th:each="g : ${r.byType}">
+										<td><span class="fi-signal-type" th:text="${g.label}">유형</span></td>
+										<td class="text-end num" th:text="${g.count}">0</td>
+										<td class="text-end num" th:text="${@fmt.rate(g.winRate)}">0%</td>
+										<td class="text-end num" th:classappend="${@fmt.tone(g.avgReturn)}" th:text="${@fmt.pct(g.avgReturn)}">0%</td>
+										<td class="text-end num" th:classappend="${@fmt.tone(g.totalReturn)}" th:text="${@fmt.pct(g.totalReturn)}">0%</td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+					</div>
+					<!-- 종목별 -->
+					<div class="col-xl-4">
+						<div class="fi-card h-100">
+							<div class="fi-card-head">
+								<div>
+									<div class="fi-card-title">종목별 성과</div>
+									<div class="fi-card-sub">수익률 합계 순</div>
+								</div>
+							</div>
+							<div th:if="${#lists.isEmpty(r.bySymbol)}" class="text-muted text-center py-3">거래 없음</div>
+							<div class="fi-scroll" th:unless="${#lists.isEmpty(r.bySymbol)}">
+								<table class="fi-table fi-table-head">
+									<thead><tr><th>종목</th><th class="text-end">거래</th><th class="text-end">승률</th><th class="text-end">평균</th><th class="text-end">합계</th></tr></thead>
+									<tbody>
+										<tr th:each="g : ${r.bySymbol}">
+											<td class="fw-semibold" th:text="${@fmt.base(g.key)}">BTC</td>
+											<td class="text-end num" th:text="${g.count}">0</td>
+											<td class="text-end num" th:text="${@fmt.rate(g.winRate)}">0%</td>
+											<td class="text-end num" th:classappend="${@fmt.tone(g.avgReturn)}" th:text="${@fmt.pct(g.avgReturn)}">0%</td>
+											<td class="text-end num" th:classappend="${@fmt.tone(g.totalReturn)}" th:text="${@fmt.pct(g.totalReturn)}">0%</td>
+										</tr>
+									</tbody>
+								</table>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- 거래 내역 -->
+				<div class="fi-card mt-3">
+					<div class="fi-card-head">
+						<div>
+							<div class="fi-card-title">거래 내역</div>
+							<div class="fi-card-sub" th:text="'최근 ' + ${#lists.size(recentTrades)} + '건 (전체 ' + ${s.count} + '건)'">최근</div>
+						</div>
+					</div>
+					<div class="table-responsive fi-scroll-lg">
+						<table class="fi-table fi-table-head">
+							<thead>
+								<tr>
+									<th>시그널 시각</th><th>종목</th><th>유형</th><th>쏠림</th><th>진입</th>
+									<th class="text-end">진입가</th><th class="text-end">청산가</th><th>청산</th><th class="text-end">수익률</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr th:if="${#lists.isEmpty(recentTrades)}"><td colspan="9" class="text-muted text-center py-4">조건에 맞는 시그널이 없었습니다.</td></tr>
+								<tr th:each="t : ${recentTrades}">
+									<td class="text-muted num" th:text="${@fmt.dateTime(t.signalTime)}">11/11 10:00</td>
+									<td class="fw-semibold" th:text="${@fmt.base(t.symbol)}">BTC</td>
+									<td><span class="fi-signal-type" th:text="${t.type.label}">유형</span></td>
+									<td><span class="fi-side" th:classappend="'side-' + ${t.crowdedSide}" th:text="${@fmt.side(t.crowdedSide)}">롱 쏠림</span></td>
+									<td th:classappend="${t.position == 'LONG'} ? 'text-up' : 'text-down'" th:text="${@fmt.position(t.position)}">숏</td>
+									<td class="text-end num" th:text="${@fmt.price(t.entryPrice)}">0</td>
+									<td class="text-end num" th:text="${@fmt.price(t.exitPrice)}">0</td>
+									<td class="text-muted" th:text="${@fmt.exitReason(t.exitReason)} + ' · ' + ${@fmt.dateTime(t.exitTime)}">시간 만료</td>
+									<td class="text-end num fw-semibold" th:classappend="${@fmt.tone(t.returnPct)}" th:text="${@fmt.pct(t.returnPct)}">0%</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</th:block>
+
+			<!-- 실행 이력 -->
+			<div class="fi-card mt-3" th:if="${!#lists.isEmpty(runs)}">
+				<div class="fi-card-head">
+					<div>
+						<div class="fi-card-title">실행 이력</div>
+						<div class="fi-card-sub">backtest_run · backtest_result 저장분 (최근 15건)</div>
+					</div>
+				</div>
+				<div class="table-responsive">
+					<table class="fi-table fi-table-head">
+						<thead>
+							<tr>
+								<th>#</th><th>실행 시각</th><th>유형</th><th>종목</th><th>보유</th><th>익절/손절</th>
+								<th class="text-end">거래</th><th class="text-end">승률</th><th class="text-end">평균</th>
+								<th class="text-end">합계</th><th class="text-end">MDD</th><th></th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr th:each="x : ${runs}" th:classappend="${result != null and result.runId == x.runId} ? 'fi-row-active'">
+								<td class="text-muted num" th:text="${x.runId}">1</td>
+								<td class="text-muted num" th:text="${#temporals.format(x.createdAt, 'M/d HH:mm')}">11/11 10:00</td>
+								<td th:text="${typeLabels.get(x.signalType) ?: x.signalType}">전체</td>
+								<td th:text="${x.symbol != null} ? ${@fmt.base(x.symbol)} : '전체'">전체</td>
+								<td class="num" th:text="${x.holdMinutes / 60} + 'h'">4h</td>
+								<td class="num text-muted"
+									th:text="(${x.takeProfit != null} ? ${#numbers.formatDecimal(x.takeProfit, 1, 1)} : '-') + ' / ' + (${x.stopLoss != null} ? ${#numbers.formatDecimal(x.stopLoss, 1, 1)} : '-')">- / -</td>
+								<th:block th:if="${x.signalCount != null}">
+									<td class="text-end num" th:text="${x.signalCount}">0</td>
+									<td class="text-end num" th:text="${@fmt.rate(x.winRate)}">0%</td>
+									<td class="text-end num" th:classappend="${@fmt.tone(x.avgReturn)}" th:text="${@fmt.pct(x.avgReturn)}">0%</td>
+									<td class="text-end num" th:classappend="${@fmt.tone(x.totalReturn)}" th:text="${@fmt.pct(x.totalReturn)}">0%</td>
+									<td class="text-end num text-down" th:text="'-' + ${#numbers.formatDecimal(x.maxDrawdown, 1, 2)}">0</td>
+								</th:block>
+								<td th:if="${x.signalCount == null}" colspan="5" class="text-end text-muted" th:text="${x.status}">FAILED</td>
+								<td class="text-end"><a th:if="${x.signalCount != null}" th:href="@{/backtest(run=${x.runId})}" class="fi-more small">보기</a></td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</div>
+
+			<!-- 실전 기록 검증 상태 -->
+			<div class="fi-sample-note mt-3" th:if="${!outcomeReady}">
+				<i class="bi bi-info-circle"></i>
+				위 결과는 과거 데이터로 규칙을 <strong>재현</strong>한 것입니다. 실제로 감지·기록된 시그널의 발생 후 가격(1h/4h/24h) 검증은
+				<code>market_signal</code>에 결과 컬럼을 추가해야 쌓이기 시작합니다:
+				<pre class="mt-2 mb-0 small">ALTER TABLE market_signal
+    ADD COLUMN price_1h  DECIMAL(24,8) NULL COMMENT '발생 1시간 후 가격'  AFTER detected_at,
+    ADD COLUMN price_4h  DECIMAL(24,8) NULL COMMENT '발생 4시간 후 가격'  AFTER price_1h,
+    ADD COLUMN price_24h DECIMAL(24,8) NULL COMMENT '발생 24시간 후 가격' AFTER price_4h;</pre>
+			</div>
+
+			<footer class="fi-footer">
+				백테스트는 과거 데이터에 대한 가정적 결과이며 슬리피지 · 펀딩비 지급 · 체결 실패를 반영하지 않습니다.
+				과거 성과가 미래 수익을 보장하지 않으며, 표본이 적은(n &lt; 30) 결과는 우연에 크게 좌우됩니다.
+			</footer>
+		</div>
+	</main>
+</div>
+
+<th:block th:replace="~{fragments/layout :: scripts}"></th:block>
+<script th:if="${result != null}" th:inline="javascript">
+	window.BT_DATA = /*[(${chartJson})]*/ {};
+</script>
+<script th:src="@{/js/backtest.js}"></script>
+</body>
+</html>

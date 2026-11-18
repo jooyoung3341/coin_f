@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org" data-bs-theme="dark">
+<head th:replace="~{fragments/layout :: head('펀딩비 분석')}"></head>
+<body>
+<div class="fi-shell">
+	<aside th:replace="~{fragments/layout :: sidebar}"></aside>
+
+	<main class="fi-main" th:with="v=${view}, s=${view.stats}">
+		<header th:replace="~{fragments/layout :: topbar}"></header>
+
+		<div class="fi-content">
+			<p class="fi-lead">특정 방향으로 포지션이 과도하게 몰리는 상황을 찾습니다. 펀딩비가 양(+)이면 롱이 숏에게, 음(-)이면 숏이 롱에게 비용을 지불합니다.</p>
+
+			<!-- 요약 -->
+			<div class="fi-card fi-stats fi-stats-5">
+				<div class="fi-stat">
+					<div class="fi-card-label">시장 중앙값 <span class="fi-hint">(8h 환산)</span></div>
+					<div class="fi-stat-value num" th:classappend="${@fmt.tone(s.median8h)}" th:text="${@fmt.funding(s.median8h)}">-</div>
+					<div class="fi-hint">기본 수준 +0.0100%</div>
+				</div>
+				<div class="fi-stat">
+					<div class="fi-card-label">양(+) 펀딩 종목</div>
+					<div class="fi-stat-value num" th:text="${#numbers.formatDecimal(s.positivePercent, 1, 1)} + '%'">-</div>
+					<div class="fi-hint" th:text="'대상 ' + ${s.count} + '종목 (24h 거래대금 $20M 이상)'"></div>
+				</div>
+				<div class="fi-stat">
+					<div class="fi-card-label">롱 과열</div>
+					<div class="fi-stat-value num text-up" th:text="${s.hotLong} + '종목'">0</div>
+					<div class="fi-hint">8h 환산 +0.03% 이상</div>
+				</div>
+				<div class="fi-stat">
+					<div class="fi-card-label">숏 과열</div>
+					<div class="fi-stat-value num text-down" th:text="${s.hotShort} + '종목'">0</div>
+					<div class="fi-hint">8h 환산 -0.03% 이하</div>
+				</div>
+				<div class="fi-stat">
+					<div class="fi-card-label">다음 정산 <span class="fi-hint">(8h 주기)</span></div>
+					<div class="fi-stat-value num" th:text="${s.nextFundingTime > 0} ? ${@fmt.countdown(s.nextFundingTime)} : '-'">-</div>
+					<div class="fi-hint">00 · 08 · 16시 UTC</div>
+				</div>
+			</div>
+
+			<!-- 순위 -->
+			<div class="row g-3 mt-0">
+				<div class="col-xl-6" th:each="rank : ${ {'top', 'bottom'} }">
+					<div class="fi-card h-100" th:with="list=${rank == 'top'} ? ${v.top} : ${v.bottom}">
+						<div class="fi-card-head">
+							<div>
+								<div class="fi-card-title" th:text="${rank == 'top'} ? '펀딩비 높은 순 — 롱 쏠림' : '펀딩비 낮은 순 — 숏 쏠림'">순위</div>
+								<div class="fi-card-sub">8시간 환산 기준 정렬</div>
+							</div>
+						</div>
+						<div class="table-responsive">
+							<table class="fi-table fi-table-head">
+								<thead>
+									<tr>
+										<th>#</th><th>종목</th>
+										<th class="text-end">정산당</th>
+										<th class="text-end">8h 환산</th>
+										<th class="text-end d-none d-sm-table-cell">연환산</th>
+										<th class="text-end d-none d-md-table-cell">24h 거래대금</th>
+									</tr>
+								</thead>
+								<tbody>
+									<tr th:each="f, st : ${list}">
+										<td class="fi-rank" th:text="${st.count}">1</td>
+										<td>
+											<span th:text="${@fmt.base(f.symbol)}">BTC</span>
+											<span class="fi-interval" th:text="${f.intervalHours} + 'h'">8h</span>
+										</td>
+										<td class="text-end num" th:classappend="${@fmt.tone(f.rate)}" th:text="${@fmt.funding(f.rate)}"></td>
+										<td class="text-end num fw-semibold" th:classappend="${@fmt.tone(f.rate8h())}" th:text="${@fmt.funding(f.rate8h())}"></td>
+										<td class="text-end num text-muted d-none d-sm-table-cell" th:text="${@fmt.pct(f.annualized() * 100)}"></td>
+										<td class="text-end num text-muted d-none d-md-table-cell" th:text="${@fmt.usd(f.quoteVolume24h)}"></td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- 이력 + 급변 -->
+			<div class="row g-3 mt-0">
+				<div class="col-xl-8">
+					<div class="fi-card h-100">
+						<div class="fi-card-head">
+							<div>
+								<div class="fi-card-title">과거 펀딩비 변화</div>
+								<div class="fi-card-sub" id="fundingHistSub">정산 확정값</div>
+							</div>
+							<div class="d-flex gap-2 flex-wrap">
+								<select class="form-select form-select-sm fi-select" id="fundingSymbol">
+									<option th:each="sym : ${historySymbols}" th:value="${sym}" th:text="${sym}"
+											th:selected="${sym == 'BTCUSDT'}">BTCUSDT</option>
+								</select>
+								<div class="btn-group btn-group-sm" id="fundingRange">
+									<button type="button" class="btn fi-seg" data-days="7">7일</button>
+									<button type="button" class="btn fi-seg active" data-days="30">30일</button>
+								</div>
+							</div>
+						</div>
+						<div class="fi-chart-wrap fi-chart-md"><canvas id="fundingHistChart"></canvas></div>
+						<div class="fi-chart-stat text-start mt-2" id="fundingHistStat"></div>
+					</div>
+				</div>
+
+				<div class="col-xl-4">
+					<div class="fi-card h-100">
+						<div class="fi-card-head">
+							<div>
+								<div class="fi-card-title">펀딩비 급등 · 급락</div>
+								<div class="fi-card-sub">현재 예측값 vs 직전 정산 (8h 환산, ±0.01%p 이상)</div>
+							</div>
+						</div>
+						<div th:if="${#lists.isEmpty(v.alerts)}" class="text-muted small py-4 text-center">
+							현재 급변 종목이 없습니다.
+						</div>
+						<div class="fi-signals">
+							<div class="fi-signal" th:each="a : ${v.alerts}" th:classappend="${a.delta > 0} ? 'lv-up' : 'lv-down'">
+								<div class="d-flex align-items-center gap-2">
+									<span class="fi-signal-type" th:text="${a.delta > 0} ? '급등' : '급락'">급등</span>
+									<strong th:text="${@fmt.base(a.symbol)}">BTC</strong>
+									<span class="fi-interval" th:text="${a.intervalHours} + 'h'">8h</span>
+									<span class="ms-auto num" th:classappend="${@fmt.tone(a.delta)}"
+										  th:text="${@fmt.funding(a.delta)} + 'p'">+0.01%p</span>
+								</div>
+								<div class="fi-signal-evidence mt-1">
+									<span class="num" th:text="'직전 ' + ${@fmt.funding(a.last8h)}"></span>
+									<span class="num" th:text="'현재 ' + ${@fmt.funding(a.current8h)}"></span>
+									<span class="num" th:text="'7일 평균 ' + ${@fmt.funding(a.avg7d8h)}"></span>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<div class="fi-card fi-planned mt-3">
+				<i class="bi bi-arrow-left-right"></i>
+				<span>거래소별 펀딩비 비교</span>
+				<small>현재 연동 거래소는 Binance 하나입니다. Bybit 연동 후 같은 종목의 거래소 간 펀딩비 차이를 비교합니다.</small>
+			</div>
+
+			<footer class="fi-footer">
+				연환산 = 8h 환산 × 3회 × 365일 (단리, 펀딩비가 유지된다고 가정한 참고값). 본 서비스의 정보는 투자 권유가 아닙니다.
+			</footer>
+		</div>
+	</main>
+</div>
+
+<th:block th:replace="~{fragments/layout :: scripts}"></th:block>
+<script th:src="@{/js/funding.js}"></script>
+</body>
+</html>

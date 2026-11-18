@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org" data-bs-theme="dark">
+<head th:replace="~{fragments/layout :: head('청산 분석')}"></head>
+<body>
+<div class="fi-shell">
+	<aside th:replace="~{fragments/layout :: sidebar}"></aside>
+
+	<main class="fi-main">
+		<header th:replace="~{fragments/layout :: topbar}"></header>
+
+		<div class="fi-content">
+			<p class="fi-lead">급격한 가격 변동과 포지션 청산 상황을 확인합니다.
+				<span class="liq-long">롱 청산</span>은 가격 하락으로 롱 포지션이 강제 정리된 것,
+				<span class="liq-short">숏 청산</span>은 가격 상승으로 숏 포지션이 강제 정리된 것입니다.</p>
+
+			<div id="liqPartial" class="fi-sample-note d-none"></div>
+
+			<!-- 요약 -->
+			<div class="fi-card fi-stats fi-stats-4">
+				<div class="fi-stat">
+					<div class="fi-card-label">최근 1시간</div>
+					<div class="fi-stat-value num" id="s1hTotal">-</div>
+					<div class="fi-liq-split num"><span class="liq-long" id="s1hLong"></span><span class="liq-short" id="s1hShort"></span></div>
+				</div>
+				<div class="fi-stat">
+					<div class="fi-card-label">최근 24시간</div>
+					<div class="fi-stat-value num" id="s24Total">-</div>
+					<div class="fi-liq-split num"><span class="liq-long" id="s24Long"></span><span class="liq-short" id="s24Short"></span></div>
+				</div>
+				<div class="fi-stat">
+					<div class="fi-card-label">24시간 청산 건수</div>
+					<div class="fi-stat-value num" id="s24Count">-</div>
+					<div class="fi-hint" id="s24Bias"></div>
+				</div>
+				<div class="fi-stat">
+					<div class="fi-card-label">24시간 최대 단일 청산</div>
+					<div class="fi-stat-value num" id="sLargest">-</div>
+					<div class="fi-hint" id="sLargestInfo"></div>
+				</div>
+			</div>
+
+			<div class="row g-3 mt-0">
+				<div class="col-xl-8">
+					<div class="fi-card h-100">
+						<div class="fi-card-head">
+							<div>
+								<div class="fi-card-title">시간대별 청산 규모</div>
+								<div class="fi-card-sub">최근 24시간 · 1시간 단위 · 마지막 막대는 진행 중</div>
+							</div>
+						</div>
+						<div class="fi-chart-wrap fi-chart-md"><canvas id="hourlyChart"></canvas></div>
+					</div>
+				</div>
+				<div class="col-xl-4">
+					<div class="fi-card h-100">
+						<div class="fi-card-head">
+							<div>
+								<div class="fi-card-title">실시간 청산</div>
+								<div class="fi-card-sub">3초마다 갱신 · $100K 이상 강조</div>
+							</div>
+							<span class="fi-live"><span></span>LIVE</span>
+						</div>
+						<div class="fi-feed" id="liqFeed"><div class="text-muted small py-4 text-center">청산 대기 중…</div></div>
+					</div>
+				</div>
+			</div>
+
+			<div class="row g-3 mt-0">
+				<div class="col-xl-5">
+					<div class="fi-card h-100">
+						<div class="fi-card-head">
+							<div>
+								<div class="fi-card-title">코인별 청산 순위</div>
+								<div class="fi-card-sub">최근 24시간 · 상위 20</div>
+							</div>
+						</div>
+						<div class="table-responsive">
+							<table class="fi-table fi-table-head">
+								<thead><tr><th>#</th><th>종목</th><th class="text-end">합계</th><th class="text-end">롱</th><th class="text-end">숏</th><th class="fi-bar-cell">롱 비중</th></tr></thead>
+								<tbody id="rankBody"></tbody>
+							</table>
+						</div>
+					</div>
+				</div>
+				<div class="col-xl-7">
+					<div class="fi-card h-100">
+						<div class="fi-card-head">
+							<div>
+								<div class="fi-card-title">가격대별 청산 집중 구간</div>
+								<div class="fi-card-sub">최근 24시간 실제 발생한 청산을 가격 구간별로 합산 · 노란 선 = 현재가</div>
+							</div>
+							<div class="btn-group btn-group-sm" id="distSymbol">
+								<button th:each="s, st : ${symbols}" type="button" class="btn fi-seg"
+										th:classappend="${st.first} ? 'active'" th:data-symbol="${s}"
+										th:text="${#strings.replace(s, 'USDT', '')}">BTC</button>
+							</div>
+						</div>
+						<div class="fi-chart-wrap fi-chart-lg"><canvas id="distChart"></canvas></div>
+						<div class="fi-hint mt-2" id="distInfo"></div>
+					</div>
+				</div>
+			</div>
+
+			<footer class="fi-footer">
+				바이낸스 청산 스트림은 종목당 1초에 최대 1건(가장 큰 청산)만 전송하므로, 금액은 실제 청산 총액보다 작은 표본 값입니다.
+				가격대별 분포는 이미 체결된 청산의 위치이며, 미래 청산 예상가(히트맵)가 아닙니다.
+			</footer>
+		</div>
+	</main>
+</div>
+
+<th:block th:replace="~{fragments/layout :: scripts}"></th:block>
+<script th:src="@{/js/liquidation.js}"></script>
+</body>
+</html>

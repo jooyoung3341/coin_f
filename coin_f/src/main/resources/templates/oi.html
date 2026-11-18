@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org" data-bs-theme="dark">
+<head th:replace="~{fragments/layout :: head('미결제약정(OI)')}"></head>
+<body>
+<div class="fi-shell">
+	<aside th:replace="~{fragments/layout :: sidebar}"></aside>
+
+	<main class="fi-main" th:with="v=${view}, s=${view.stats}">
+		<header th:replace="~{fragments/layout :: topbar}"></header>
+
+		<div class="fi-content">
+			<p class="fi-lead">시장에 포지션이 얼마나 유입되고 있는지 파악합니다. OI가 늘면 새 포지션이 쌓이는 것이고, 줄면 포지션이 청산·정리되는 것입니다.</p>
+
+			<div th:if="${s.count == 0}" class="fi-sample-note">
+				<span class="spinner-border spinner-border-sm me-1"></span> OI 데이터를 수집하고 있습니다. (서버 시작 후 약 5초)
+			</div>
+
+			<div class="fi-card fi-stats fi-stats-4">
+				<div class="fi-stat">
+					<div class="fi-card-label">추적 종목 OI 합계</div>
+					<div class="fi-stat-value num" th:text="${@fmt.usd(s.totalUsd)}">-</div>
+					<div class="fi-hint" th:text="'거래대금 상위 ' + ${s.count} + '종목'"></div>
+				</div>
+				<div class="fi-stat">
+					<div class="fi-card-label">24h 변화</div>
+					<div class="fi-stat-value num" th:classappend="${@fmt.tone(s.totalChange24h)}" th:text="${@fmt.pct(s.totalChange24h)}">-</div>
+				</div>
+				<div class="fi-stat">
+					<div class="fi-card-label">24h 급증 <span class="fi-hint">(+10% 이상)</span></div>
+					<div class="fi-stat-value num text-up" th:text="${s.surge} + '종목'">0</div>
+				</div>
+				<div class="fi-stat">
+					<div class="fi-card-label">24h 급감 <span class="fi-hint">(-10% 이하)</span></div>
+					<div class="fi-stat-value num text-down" th:text="${s.drop} + '종목'">0</div>
+				</div>
+			</div>
+
+			<div class="row g-3 mt-0">
+				<!-- 가격 vs OI -->
+				<div class="col-xl-7">
+					<div class="fi-card h-100">
+						<div class="fi-card-head">
+							<div>
+								<div class="fi-card-title">가격 변화 vs OI 변화 (24h)</div>
+								<div class="fi-card-sub">점 하나가 한 종목 · 점 크기 = OI 규모</div>
+							</div>
+						</div>
+						<div class="fi-quad-wrap">
+							<div class="fi-chart-wrap fi-chart-lg"><canvas id="oiScatter"></canvas></div>
+							<span class="fi-quad q1">신규 롱 유입<br><small>가격↑ OI↑</small></span>
+							<span class="fi-quad q2">숏 청산(커버)<br><small>가격↑ OI↓</small></span>
+							<span class="fi-quad q3">신규 숏 유입<br><small>가격↓ OI↑</small></span>
+							<span class="fi-quad q4">롱 청산·정리<br><small>가격↓ OI↓</small></span>
+						</div>
+					</div>
+				</div>
+
+				<!-- 급증 탐색 -->
+				<div class="col-xl-5">
+					<div class="fi-card h-100">
+						<div class="fi-card-head">
+							<div>
+								<div class="fi-card-title">OI 급증 · 급감 탐색</div>
+								<div class="fi-card-sub">1h ±3% · 4h ±5% · 24h ±10% 중 하나 이상</div>
+							</div>
+						</div>
+						<div th:if="${#lists.isEmpty(v.spikes)}" class="text-muted small py-4 text-center">기준을 넘은 종목이 없습니다.</div>
+						<div class="fi-signals">
+							<div class="fi-signal" th:each="r : ${v.spikes}" th:classappend="${r.change24h >= 0} ? 'lv-up' : 'lv-down'">
+								<div class="d-flex align-items-center gap-2">
+									<strong th:text="${@fmt.base(r.symbol)}">BTC</strong>
+									<span class="fi-signal-type" th:text="${r.reading}">해석</span>
+									<span class="ms-auto text-muted num small" th:text="${@fmt.usd(r.openInterestUsd)}"></span>
+								</div>
+								<div class="fi-signal-evidence mt-1">
+									<span class="num" th:if="${r.change1h != null}" th:classappend="${@fmt.tone(r.change1h)}" th:text="'1h ' + ${@fmt.pct(r.change1h)}"></span>
+									<span class="num" th:if="${r.change4h != null}" th:classappend="${@fmt.tone(r.change4h)}" th:text="'4h ' + ${@fmt.pct(r.change4h)}"></span>
+									<span class="num" th:classappend="${@fmt.tone(r.change24h)}" th:text="'24h ' + ${@fmt.pct(r.change24h)}"></span>
+									<span class="num" th:if="${r.priceChange24h != null}" th:text="'가격 ' + ${@fmt.pct(r.priceChange24h)}"></span>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- 순위 -->
+			<div class="fi-card mt-3">
+				<div class="fi-card-head">
+					<div>
+						<div class="fi-card-title">코인별 OI 순위</div>
+						<div class="fi-card-sub">열 제목을 누르면 정렬 · 1h/4h는 DB 이력 기준</div>
+					</div>
+				</div>
+				<div class="table-responsive">
+					<table class="fi-table fi-table-head fi-sortable" id="oiTable">
+						<thead>
+							<tr>
+								<th data-sort="num">#</th>
+								<th data-sort="text">종목</th>
+								<th class="text-end" data-sort="num">OI</th>
+								<th class="text-end" data-sort="num">1h</th>
+								<th class="text-end" data-sort="num">4h</th>
+								<th class="text-end" data-sort="num">24h</th>
+								<th class="text-end" data-sort="num">가격 24h</th>
+								<th class="d-none d-md-table-cell" data-sort="text">해석</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr th:each="r, st : ${v.rows}">
+								<td class="fi-rank" th:text="${st.count}" th:data-v="${st.count}">1</td>
+								<td th:data-v="${r.symbol}">
+									<a th:href="@{/coin/{s}(s=${r.symbol})}" class="fi-sym-link" th:text="${@fmt.base(r.symbol)}">BTC</a>
+								</td>
+								<td class="text-end num" th:data-v="${r.openInterestUsd}" th:text="${@fmt.usd(r.openInterestUsd)}"></td>
+								<td class="text-end num" th:data-v="${r.change1h}" th:classappend="${r.change1h != null} ? ${@fmt.tone(r.change1h)}"
+									th:text="${r.change1h != null} ? ${@fmt.pct(r.change1h)} : '-'"></td>
+								<td class="text-end num" th:data-v="${r.change4h}" th:classappend="${r.change4h != null} ? ${@fmt.tone(r.change4h)}"
+									th:text="${r.change4h != null} ? ${@fmt.pct(r.change4h)} : '-'"></td>
+								<td class="text-end num fw-semibold" th:data-v="${r.change24h}" th:classappend="${@fmt.tone(r.change24h)}" th:text="${@fmt.pct(r.change24h)}"></td>
+								<td class="text-end num" th:data-v="${r.priceChange24h}" th:classappend="${r.priceChange24h != null} ? ${@fmt.tone(r.priceChange24h)}"
+									th:text="${r.priceChange24h != null} ? ${@fmt.pct(r.priceChange24h)} : '-'"></td>
+								<td class="d-none d-md-table-cell text-muted" th:data-v="${r.reading}" th:text="${r.reading}"></td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</div>
+
+			<div class="fi-card fi-planned mt-3">
+				<i class="bi bi-arrow-left-right"></i>
+				<span>거래소별 OI 비교</span>
+				<small>현재 연동 거래소는 Binance 하나입니다. Bybit 연동 후 거래소별 OI 점유율을 비교합니다.</small>
+			</div>
+
+			<footer class="fi-footer">가격·OI 해석은 일반적인 해석 방식이며 확정 신호가 아닙니다. 본 서비스의 정보는 투자 권유가 아닙니다.</footer>
+		</div>
+	</main>
+</div>
+
+<th:block th:replace="~{fragments/layout :: scripts}"></th:block>
+<script th:inline="javascript">
+	// 컨트롤러에서 Jackson 3 로 직렬화한 JSON 을 그대로 삽입
+	window.OI_POINTS = /*[(${oiJson})]*/ [];
+</script>
+<script th:src="@{/js/oi.js}"></script>
+</body>
+</html>

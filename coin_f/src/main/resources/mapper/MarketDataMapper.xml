@@ -1,0 +1,360 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.coin.f.storage.MarketDataMapper">
+
+	<!-- ===================== 종목 ===================== -->
+
+	<insert id="upsertSymbols">
+		INSERT INTO symbol (exchange, symbol, base_asset, quote_asset, is_active)
+		VALUES
+		<foreach collection="list" item="r" separator=",">
+			(#{r.exchange}, #{r.symbol}, #{r.baseAsset}, #{r.quoteAsset}, 1)
+		</foreach>
+		ON DUPLICATE KEY UPDATE
+			base_asset = VALUES(base_asset),
+			quote_asset = VALUES(quote_asset),
+			is_active = 1
+	</insert>
+
+	<resultMap id="symbolIdMap" type="com.coin.f.storage.Rows$SymbolId">
+		<constructor>
+			<!-- MyBatis 별칭: int = Integer, _int = 기본형 int (record 생성자와 일치해야 함) -->
+			<idArg column="symbol_id" javaType="_int"/>
+			<arg column="symbol" javaType="String"/>
+		</constructor>
+	</resultMap>
+
+	<select id="selectSymbolIds" resultMap="symbolIdMap">
+		SELECT symbol_id, symbol
+		FROM symbol
+		WHERE exchange = #{exchange}
+	</select>
+
+	<!-- ===================== 캔들 ===================== -->
+
+	<insert id="upsertCandles">
+		INSERT INTO price_candle
+			(symbol_id, interval_code, open_time, open_price, high_price, low_price, close_price,
+			 volume, quote_volume, taker_buy_volume)
+		VALUES
+		<foreach collection="list" item="k" separator=",">
+			(#{symbolId}, #{interval}, #{k.openTime}, #{k.open}, #{k.high}, #{k.low}, #{k.close},
+			 #{k.volume}, #{k.quoteVolume}, #{k.takerBuyVolume})
+		</foreach>
+		ON DUPLICATE KEY UPDATE
+			high_price = VALUES(high_price),
+			low_price = VALUES(low_price),
+			close_price = VALUES(close_price),
+			volume = VALUES(volume),
+			quote_volume = VALUES(quote_volume),
+			taker_buy_volume = VALUES(taker_buy_volume)
+	</insert>
+
+	<!-- ===================== 펀딩비 ===================== -->
+
+	<insert id="upsertFundingRates">
+		INSERT INTO funding_rate (symbol_id, funding_time, funding_rate, mark_price)
+		VALUES
+		<foreach collection="list" item="r" separator=",">
+			(#{r.symbolId}, #{r.fundingTime}, #{r.fundingRate}, #{r.markPrice})
+		</foreach>
+		ON DUPLICATE KEY UPDATE
+			funding_rate = VALUES(funding_rate),
+			mark_price = COALESCE(VALUES(mark_price), mark_price)
+	</insert>
+
+	<!-- ===================== OI ===================== -->
+
+	<insert id="upsertOpenInterest">
+		INSERT INTO open_interest (symbol_id, period, ts, oi_amount, oi_value_usd)
+		VALUES
+		<foreach collection="list" item="r" separator=",">
+			(#{r.symbolId}, #{r.period}, #{r.ts}, #{r.oiAmount}, #{r.oiValueUsd})
+		</foreach>
+		ON DUPLICATE KEY UPDATE
+			oi_amount = VALUES(oi_amount),
+			oi_value_usd = VALUES(oi_value_usd)
+	</insert>
+
+	<!-- ===================== 롱숏 ===================== -->
+
+	<insert id="upsertLongShort">
+		INSERT INTO long_short_ratio (symbol_id, ratio_type, period, ts, long_ratio, short_ratio, long_short)
+		VALUES
+		<foreach collection="list" item="r" separator=",">
+			(#{r.symbolId}, #{r.ratioType}, #{r.period}, #{r.ts}, #{r.longRatio}, #{r.shortRatio}, #{r.longShort})
+		</foreach>
+		ON DUPLICATE KEY UPDATE
+			long_ratio = VALUES(long_ratio),
+			short_ratio = VALUES(short_ratio),
+			long_short = VALUES(long_short)
+	</insert>
+
+	<!-- ===================== 청산 ===================== -->
+
+	<insert id="insertLiquidations">
+		INSERT INTO liquidation (symbol_id, side, price, quantity, value_usd, event_time)
+		VALUES
+		<foreach collection="list" item="r" separator=",">
+			(#{r.symbolId}, #{r.side}, #{r.price}, #{r.quantity}, #{r.valueUsd}, #{r.eventTime})
+		</foreach>
+	</insert>
+
+	<resultMap id="liquidationMap" type="com.coin.f.market.MarketModels$Liquidation">
+		<constructor>
+			<arg column="symbol" javaType="String"/>
+			<arg column="side" javaType="String"/>
+			<arg column="price" javaType="_double"/>
+			<arg column="quantity" javaType="_double"/>
+			<arg column="value_usd" javaType="_double"/>
+			<arg column="event_time" javaType="_long"/>
+		</constructor>
+	</resultMap>
+
+	<select id="selectLiquidationsSince" resultMap="liquidationMap">
+		SELECT s.symbol, l.side, l.price, l.quantity, l.value_usd, l.event_time
+		FROM liquidation l
+		JOIN symbol s ON s.symbol_id = l.symbol_id
+		WHERE l.event_time &gt;= #{since}
+		ORDER BY l.event_time ASC, l.liquidation_id ASC
+	</select>
+
+	<!-- ===================== 추이 조회 ===================== -->
+
+	<resultMap id="timeValueMap" type="com.coin.f.storage.Rows$TimeValue">
+		<constructor>
+			<arg column="ts" javaType="_long"/>
+			<arg column="v" javaType="_double"/>
+		</constructor>
+	</resultMap>
+
+	<select id="selectCloseHistory" resultMap="timeValueMap">
+		SELECT open_time AS ts, close_price AS v
+		FROM price_candle
+		WHERE symbol_id = #{symbolId}
+		  AND interval_code = #{interval}
+		  AND open_time &gt;= #{since}
+		ORDER BY open_time
+	</select>
+
+	<select id="selectOpenInterestHistory" resultMap="timeValueMap">
+		SELECT ts, oi_value_usd AS v
+		FROM open_interest
+		WHERE symbol_id = #{symbolId}
+		  AND period = #{period}
+		  AND ts &gt;= #{since}
+		ORDER BY ts
+	</select>
+
+	<select id="selectFundingHistory" resultMap="timeValueMap">
+		SELECT funding_time AS ts, funding_rate AS v
+		FROM funding_rate
+		WHERE symbol_id = #{symbolId}
+		  AND funding_time &gt;= #{since}
+		ORDER BY funding_time
+	</select>
+
+	<select id="selectLongShortHistory" resultMap="timeValueMap">
+		SELECT ts, long_ratio AS v
+		FROM long_short_ratio
+		WHERE symbol_id = #{symbolId}
+		  AND ratio_type = #{ratioType}
+		  AND period = #{period}
+		  AND ts &gt;= #{since}
+		ORDER BY ts
+	</select>
+
+	<resultMap id="symbolTimeValueMap" type="com.coin.f.storage.Rows$SymbolTimeValue">
+		<constructor>
+			<arg column="symbol" javaType="String"/>
+			<arg column="ts" javaType="_long"/>
+			<arg column="v" javaType="_double"/>
+		</constructor>
+	</resultMap>
+
+	<select id="selectOpenInterestSince" resultMap="symbolTimeValueMap">
+		SELECT s.symbol, o.ts, o.oi_value_usd AS v
+		FROM open_interest o
+		JOIN symbol s ON s.symbol_id = o.symbol_id
+		WHERE o.period = #{period}
+		  AND o.ts &gt;= #{since}
+		ORDER BY s.symbol, o.ts
+	</select>
+
+	<resultMap id="fundingStatMap" type="com.coin.f.storage.Rows$FundingStat">
+		<constructor>
+			<arg column="symbol" javaType="String"/>
+			<arg column="last_rate" javaType="_double"/>
+			<arg column="last_time" javaType="_long"/>
+			<arg column="avg_rate" javaType="_double"/>
+			<arg column="cnt" javaType="_int"/>
+		</constructor>
+	</resultMap>
+
+	<select id="selectFundingStats" resultMap="fundingStatMap">
+		SELECT s.symbol, f.funding_rate AS last_rate, f.funding_time AS last_time, a.avg_rate, a.cnt
+		FROM (
+			SELECT symbol_id, MAX(funding_time) AS mt, AVG(funding_rate) AS avg_rate, COUNT(*) AS cnt
+			FROM funding_rate
+			WHERE funding_time &gt;= #{since}
+			GROUP BY symbol_id
+		) a
+		JOIN funding_rate f ON f.symbol_id = a.symbol_id AND f.funding_time = a.mt
+		JOIN symbol s ON s.symbol_id = a.symbol_id
+	</select>
+
+	<!-- ===================== 시그널 ===================== -->
+
+	<insert id="insertSignal">
+		INSERT INTO market_signal
+			(symbol_id, signal_type, level, direction, reason, evidence_json, price_at, detected_at)
+		VALUES
+			(#{symbolId}, #{signalType}, #{level}, #{direction}, #{reason}, #{evidenceJson}, #{priceAt}, #{detectedAt})
+	</insert>
+
+	<!-- ===================== AI 리포트 ===================== -->
+
+	<insert id="insertAiReport" useGeneratedKeys="true" keyProperty="reportId" keyColumn="report_id">
+		INSERT INTO ai_report
+			(symbol_id, report_type, summary, scenarios, overheat_level, risks, input_json, model, created_at)
+		VALUES
+			(#{symbolId}, #{reportType}, #{summary}, #{scenarios}, #{overheatLevel}, #{risks}, #{inputJson},
+			 #{model}, #{createdAt})
+	</insert>
+
+	<select id="selectAiReports" resultType="com.coin.f.storage.AiReportRow">
+		SELECT r.*, s.symbol
+		FROM ai_report r
+		LEFT JOIN symbol s ON s.symbol_id = r.symbol_id
+		WHERE r.created_at &gt;= #{since}
+		ORDER BY r.created_at DESC, r.report_id DESC
+		LIMIT #{limit}
+	</select>
+
+	<!-- SELECT m.* + setter 자동 매핑: price_1h 등 컬럼 추가 전에도 동작 -->
+	<select id="selectSignalHistory" resultType="com.coin.f.storage.SignalHistoryRow">
+		SELECT m.*, s.symbol
+		FROM market_signal m
+		JOIN symbol s ON s.symbol_id = m.symbol_id
+		WHERE m.detected_at &gt;= #{since}
+		ORDER BY m.detected_at DESC, m.signal_id DESC
+		LIMIT #{limit}
+	</select>
+
+	<select id="selectSignalsPendingOutcome" resultType="com.coin.f.storage.SignalHistoryRow">
+		SELECT m.*, s.symbol
+		FROM market_signal m
+		JOIN symbol s ON s.symbol_id = m.symbol_id
+		WHERE m.detected_at &gt;= #{since}
+		  AND (   (m.price_1h  IS NULL AND m.detected_at &lt;= #{now} - 3600000)
+		       OR (m.price_4h  IS NULL AND m.detected_at &lt;= #{now} - 14400000)
+		       OR (m.price_24h IS NULL AND m.detected_at &lt;= #{now} - 86400000))
+		ORDER BY m.detected_at
+		LIMIT #{limit}
+	</select>
+
+	<update id="updateSignalOutcome">
+		UPDATE market_signal
+		SET price_1h  = COALESCE(#{price1h}, price_1h),
+		    price_4h  = COALESCE(#{price4h}, price_4h),
+		    price_24h = COALESCE(#{price24h}, price_24h)
+		WHERE signal_id = #{signalId}
+	</update>
+
+	<select id="countSignalOutcomeColumns" resultType="int">
+		SELECT COUNT(*)
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE()
+		  AND TABLE_NAME = 'market_signal'
+		  AND COLUMN_NAME IN ('price_1h', 'price_4h', 'price_24h')
+	</select>
+
+	<!-- ===================== 백테스트 입력 ===================== -->
+
+	<resultMap id="candleRowMap" type="com.coin.f.storage.Rows$CandleRow">
+		<constructor>
+			<arg column="symbol" javaType="String"/>
+			<arg column="ts" javaType="_long"/>
+			<arg column="open_price" javaType="_double"/>
+			<arg column="high_price" javaType="_double"/>
+			<arg column="low_price" javaType="_double"/>
+			<arg column="close_price" javaType="_double"/>
+		</constructor>
+	</resultMap>
+
+	<select id="selectCandlesSince" resultMap="candleRowMap">
+		SELECT s.symbol, c.open_time AS ts, c.open_price, c.high_price, c.low_price, c.close_price
+		FROM price_candle c
+		JOIN symbol s ON s.symbol_id = c.symbol_id
+		WHERE c.interval_code = #{interval}
+		  AND c.open_time &gt;= #{since}
+		ORDER BY s.symbol, c.open_time
+	</select>
+
+	<select id="selectLongShortSince" resultMap="symbolTimeValueMap">
+		SELECT s.symbol, l.ts, l.long_ratio AS v
+		FROM long_short_ratio l
+		JOIN symbol s ON s.symbol_id = l.symbol_id
+		WHERE l.ratio_type = #{ratioType}
+		  AND l.period = #{period}
+		  AND l.ts &gt;= #{since}
+		ORDER BY s.symbol, l.ts
+	</select>
+
+	<select id="selectFundingSince" resultMap="symbolTimeValueMap">
+		SELECT s.symbol, f.funding_time AS ts, f.funding_rate AS v
+		FROM funding_rate f
+		JOIN symbol s ON s.symbol_id = f.symbol_id
+		WHERE f.funding_time &gt;= #{since}
+		ORDER BY s.symbol, f.funding_time
+	</select>
+
+	<!-- ===================== 백테스트 실행/결과 ===================== -->
+
+	<insert id="insertBacktestRun" useGeneratedKeys="true" keyProperty="runId" keyColumn="run_id">
+		INSERT INTO backtest_run
+			(symbol_id, signal_type, start_time, end_time, hold_minutes, take_profit, stop_loss, params_json, status)
+		VALUES
+			(#{symbolId}, #{signalType}, #{startTime}, #{endTime}, #{holdMinutes}, #{takeProfit}, #{stopLoss},
+			 #{paramsJson}, #{status})
+	</insert>
+
+	<update id="updateBacktestRunStatus">
+		UPDATE backtest_run SET status = #{status} WHERE run_id = #{runId}
+	</update>
+
+	<insert id="insertBacktestResult">
+		INSERT INTO backtest_result
+			(run_id, signal_count, win_count, win_rate, avg_return, total_return, max_drawdown, period_json)
+		VALUES
+			(#{runId}, #{signalCount}, #{winCount}, #{winRate}, #{avgReturn}, #{totalReturn}, #{maxDrawdown}, #{periodJson})
+	</insert>
+
+	<select id="selectBacktestRuns" resultType="com.coin.f.storage.BacktestRunRow">
+		SELECT r.*, s.symbol,
+		       b.signal_count, b.win_count, b.win_rate, b.avg_return, b.total_return, b.max_drawdown
+		FROM backtest_run r
+		LEFT JOIN symbol s ON s.symbol_id = r.symbol_id
+		LEFT JOIN backtest_result b ON b.run_id = r.run_id
+		ORDER BY r.run_id DESC
+		LIMIT #{limit}
+	</select>
+
+	<select id="selectBacktestRun" resultType="com.coin.f.storage.BacktestRunRow">
+		SELECT r.*, s.symbol,
+		       b.signal_count, b.win_count, b.win_rate, b.avg_return, b.total_return, b.max_drawdown, b.period_json
+		FROM backtest_run r
+		LEFT JOIN symbol s ON s.symbol_id = r.symbol_id
+		LEFT JOIN backtest_result b ON b.run_id = r.run_id
+		WHERE r.run_id = #{runId}
+	</select>
+
+	<select id="countSignalsSince" resultType="int">
+		SELECT COUNT(*)
+		FROM market_signal
+		WHERE symbol_id = #{symbolId}
+		  AND signal_type = #{signalType}
+		  AND detected_at &gt;= #{since}
+	</select>
+
+</mapper>

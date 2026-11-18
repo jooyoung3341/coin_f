@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org" data-bs-theme="dark">
+<head th:replace="~{fragments/layout :: head('대시보드')}"></head>
+<body>
+<div class="fi-shell">
+	<aside th:replace="~{fragments/layout :: sidebar}"></aside>
+
+	<main class="fi-main" th:with="d=${dashboard}">
+		<header th:replace="~{fragments/layout :: topbar}"></header>
+
+		<div class="fi-content">
+			<div th:if="${d.sample}" class="fi-sample-note">
+				<i class="bi bi-info-circle"></i>
+				현재 화면은 <strong>샘플 데이터</strong>입니다(app.market.source=sample). 실제 시세가 아닙니다.
+			</div>
+			<div th:if="${!d.sample and d.loading()}" class="fi-sample-note">
+				<span class="spinner-border spinner-border-sm me-1"></span>
+				Binance에서 데이터를 수집하고 있습니다. 잠시 후 새로고침해 주세요.
+			</div>
+
+			<!-- 상단: 주요 코인 현재가 + 시장 요약 -->
+			<div class="row g-3">
+				<div class="col-sm-6 col-xl-3" th:each="t : ${d.tickers}">
+					<a th:href="@{/coin/{s}(s=${t.symbol})}" class="fi-card fi-ticker text-decoration-none"
+					   th:attr="data-ticker=${t.symbol}">
+						<div class="d-flex justify-content-between align-items-center">
+							<span class="fi-ticker-sym">
+								<span class="fi-coin-dot" th:attr="data-coin=${t.baseAsset()}"></span>
+								<span th:text="${t.baseAsset()}">BTC</span>
+								<small class="text-muted">/USDT Perp</small>
+							</span>
+							<span class="fi-badge js-change" th:classappend="${@fmt.tone(t.changePercent24h)}"
+								  th:text="${@fmt.pct(t.changePercent24h)}">+0.00%</span>
+						</div>
+						<div class="fi-ticker-price num js-price" th:text="${@fmt.price(t.price)}">0</div>
+						<div class="fi-ticker-meta">24h 거래대금 <span class="num js-vol" th:text="${@fmt.usd(t.quoteVolume24h)}"></span></div>
+					</a>
+				</div>
+
+				<div class="col-sm-6 col-xl-3">
+					<div class="fi-card h-100" th:with="s=${d.summary}">
+						<div class="fi-card-label">시장 분위기</div>
+						<div class="d-flex align-items-baseline gap-2">
+							<span class="fi-sentiment-score num" th:text="${s.sentiment.score}">50</span>
+							<span class="fi-sentiment-label" th:text="${s.sentiment.label}">중립</span>
+						</div>
+						<div class="fi-gauge"><span th:style="'left:' + ${s.sentiment.score} + '%'"></span></div>
+						<div class="d-flex justify-content-between small text-muted mt-1"><span>공포</span><span>탐욕</span></div>
+					</div>
+				</div>
+			</div>
+
+			<!-- 시장 요약 지표 -->
+			<div class="fi-card fi-stats mt-3" th:with="s=${d.summary}">
+				<div class="fi-stat">
+					<div class="fi-card-label">전체 거래량 (24h)</div>
+					<div class="fi-stat-value num" th:text="${@fmt.usd(s.totalVolume24h)}">-</div>
+				</div>
+				<div class="fi-stat">
+					<div class="fi-card-label">미결제약정 <span class="fi-hint" th:text="'(상위 ' + ${s.oiUniverseSize} + '종목 합계)'"></span></div>
+					<div class="fi-stat-value num" th:text="${s.oiUniverseSize > 0} ? ${@fmt.usd(s.totalOpenInterest)} : '수집 중'">-</div>
+				</div>
+				<div class="fi-stat">
+					<div class="fi-card-label">OI 변화 (24h)</div>
+					<div class="fi-stat-value num" th:classappend="${@fmt.tone(s.openInterestChange24h)}"
+						 th:text="${@fmt.pct(s.openInterestChange24h)}">-</div>
+				</div>
+				<div class="fi-stat">
+					<div class="fi-card-label">펀딩비 중앙값</div>
+					<div class="fi-stat-value num" th:classappend="${@fmt.tone(s.medianFundingRate)}"
+						 th:text="${@fmt.funding(s.medianFundingRate)}">-</div>
+				</div>
+				<div class="fi-stat" th:with="l=${d.liquidations}">
+					<div class="fi-card-label">청산 (1시간)<span class="fi-hint" th:if="${l.partial()}"> · 수집 중</span></div>
+					<div class="fi-stat-value num" th:text="${@fmt.usd(l.totalUsd())}">-</div>
+					<div class="fi-liq-split num">
+						<span class="liq-long" th:text="'롱 ' + ${@fmt.usd(l.longUsd)}"></span>
+						<span class="liq-short" th:text="'숏 ' + ${@fmt.usd(l.shortUsd)}"></span>
+					</div>
+				</div>
+				<div class="fi-stat">
+					<div class="fi-card-label">감지된 시그널</div>
+					<div class="fi-stat-value num" th:text="${#lists.size(d.signals)} + '건'">0건</div>
+				</div>
+			</div>
+
+			<!-- 가격 차트 + 롱숏 비율 -->
+			<div class="row g-3 mt-0">
+				<div class="col-xl-8">
+					<div class="fi-card h-100">
+						<div class="fi-card-head">
+							<div>
+								<div class="fi-card-title">가격 추이</div>
+								<div class="fi-card-sub">종가 · 거래량</div>
+							</div>
+							<div class="d-flex gap-2 flex-wrap">
+								<div class="btn-group btn-group-sm" role="group" id="chartSymbol">
+									<button th:each="s, st : ${symbols}" type="button" class="btn fi-seg"
+											th:classappend="${st.first} ? 'active'" th:attr="data-symbol=${s}"
+											th:text="${@fmt.base(s)}">BTC</button>
+								</div>
+								<div class="btn-group btn-group-sm" role="group" id="chartInterval">
+									<button type="button" class="btn fi-seg" data-interval="15m" data-limit="96">1D</button>
+									<button type="button" class="btn fi-seg active" data-interval="1h" data-limit="168">1W</button>
+									<button type="button" class="btn fi-seg" data-interval="4h" data-limit="180">1M</button>
+								</div>
+							</div>
+						</div>
+						<div class="fi-chart-wrap"><canvas id="priceChart"></canvas></div>
+					</div>
+				</div>
+
+				<div class="col-xl-4">
+					<div class="fi-card h-100">
+						<div class="fi-card-head">
+							<div>
+								<div class="fi-card-title">롱 · 숏 비율</div>
+								<div class="fi-card-sub">계정 기준 포지션 쏠림</div>
+							</div>
+						</div>
+						<div class="fi-ls" th:each="r : ${d.longShort}">
+							<div class="d-flex justify-content-between mb-1">
+								<a th:href="@{/coin/{s}(s=${r.symbol})}" class="fi-sym-link" th:text="${@fmt.base(r.symbol)}">BTC</a>
+								<span class="text-muted small">L/S <span class="num" th:text="${#numbers.formatDecimal(r.ratio(), 1, 2)}">1.00</span></span>
+							</div>
+							<div class="fi-ls-bar">
+								<div class="fi-ls-long" th:style="'width:' + ${r.longPercent} + '%'">
+									<span class="num" th:text="${#numbers.formatDecimal(r.longPercent, 1, 1)} + '%'">50%</span>
+								</div>
+								<div class="fi-ls-short">
+									<span class="num" th:text="${#numbers.formatDecimal(r.shortPercent, 1, 1)} + '%'">50%</span>
+								</div>
+							</div>
+						</div>
+						<div class="d-flex gap-3 small text-muted mt-2">
+							<span><i class="fi-dot bg-up"></i>롱</span>
+							<span><i class="fi-dot bg-down"></i>숏</span>
+							<span class="ms-auto">개인 계정은 평상시 롱 약 70% · 80% 이상 시 시그널</span>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- 펀딩비 / OI / 시그널 -->
+			<div class="row g-3 mt-0">
+				<div class="col-lg-6 col-xxl-4">
+					<div class="fi-card h-100">
+						<div class="fi-card-head">
+							<div>
+								<div class="fi-card-title">펀딩비 순위</div>
+								<div class="fi-card-sub">다음 정산까지
+									<span class="num" th:if="${!#lists.isEmpty(d.fundingTop)}"
+										  th:text="${@fmt.countdown(d.fundingTop[0].nextFundingTime)}"></span></div>
+							</div>
+							<ul class="nav fi-tabs" role="tablist">
+								<li><button class="active" data-bs-toggle="tab" data-bs-target="#fundTop" type="button">높은 순</button></li>
+								<li><button data-bs-toggle="tab" data-bs-target="#fundBottom" type="button">낮은 순</button></li>
+							</ul>
+						</div>
+						<div class="tab-content">
+							<div class="tab-pane fade show active" id="fundTop">
+								<table class="fi-table">
+									<tr th:each="f, st : ${d.fundingTop}">
+										<td class="fi-rank" th:text="${st.count}">1</td>
+										<td th:text="${@fmt.base(f.symbol)}">BTC</td>
+										<td class="text-end num" th:classappend="${@fmt.tone(f.rate)}">
+											<span th:text="${@fmt.funding(f.rate)}"></span>
+											<span th:if="${f.intervalHours != 8}" class="fi-interval" th:text="${f.intervalHours} + 'h'">4h</span>
+										</td>
+										<td class="fi-bar-cell"><span class="fi-bar" th:classappend="${f.rate < 0} ? 'bg-down' : 'bg-up'" th:style="'width:' + ${@fmt.fundingBar(f.rate8h())} + '%'"></span></td>
+									</tr>
+								</table>
+							</div>
+							<div class="tab-pane fade" id="fundBottom">
+								<table class="fi-table">
+									<tr th:each="f, st : ${d.fundingBottom}">
+										<td class="fi-rank" th:text="${st.count}">1</td>
+										<td th:text="${@fmt.base(f.symbol)}">BTC</td>
+										<td class="text-end num" th:classappend="${@fmt.tone(f.rate)}">
+											<span th:text="${@fmt.funding(f.rate)}"></span>
+											<span th:if="${f.intervalHours != 8}" class="fi-interval" th:text="${f.intervalHours} + 'h'">4h</span>
+										</td>
+										<td class="fi-bar-cell"><span class="fi-bar" th:classappend="${f.rate < 0} ? 'bg-down' : 'bg-up'" th:style="'width:' + ${@fmt.fundingBar(f.rate8h())} + '%'"></span></td>
+									</tr>
+								</table>
+							</div>
+						</div>
+						<div class="small text-muted mt-2">정산 주기가 다른 종목(4h·1h 표시)은 8시간 환산으로 순위 · ±0.03%(8h) 이상 과열 ·
+							<a th:href="@{/funding}" class="fi-more">전체 보기</a></div>
+					</div>
+				</div>
+
+				<div class="col-lg-6 col-xxl-4">
+					<div class="fi-card h-100">
+						<div class="fi-card-head">
+							<div>
+								<div class="fi-card-title">미결제약정(OI) 변화</div>
+								<div class="fi-card-sub">24시간 기준</div>
+							</div>
+							<ul class="nav fi-tabs" role="tablist">
+								<li><button class="active" data-bs-toggle="tab" data-bs-target="#oiUp" type="button">급증</button></li>
+								<li><button data-bs-toggle="tab" data-bs-target="#oiDown" type="button">급감</button></li>
+							</ul>
+						</div>
+						<div class="tab-content">
+							<div class="tab-pane fade show active" id="oiUp">
+								<table class="fi-table">
+									<tr th:each="o, st : ${d.oiSurge}">
+										<td class="fi-rank" th:text="${st.count}">1</td>
+										<td th:text="${@fmt.base(o.symbol)}">BTC</td>
+										<td class="text-end text-muted num" th:text="${@fmt.usd(o.openInterestUsd)}"></td>
+										<td class="text-end num text-up" th:text="${@fmt.pct(o.changePercent24h)}"></td>
+									</tr>
+								</table>
+							</div>
+							<div class="tab-pane fade" id="oiDown">
+								<table class="fi-table">
+									<tr th:each="o, st : ${d.oiDrop}">
+										<td class="fi-rank" th:text="${st.count}">1</td>
+										<td th:text="${@fmt.base(o.symbol)}">BTC</td>
+										<td class="text-end text-muted num" th:text="${@fmt.usd(o.openInterestUsd)}"></td>
+										<td class="text-end num text-down" th:text="${@fmt.pct(o.changePercent24h)}"></td>
+									</tr>
+								</table>
+							</div>
+						</div>
+						<div class="small text-muted mt-2">±10% 이상이면 OI 급증 시그널</div>
+					</div>
+				</div>
+
+				<div class="col-xxl-4">
+					<div class="fi-card h-100">
+						<div class="fi-card-head">
+							<div>
+								<div class="fi-card-title">시장 시그널</div>
+								<div class="fi-card-sub">발생 이유와 근거 지표</div>
+							</div>
+							<a th:href="@{/signal}" class="small fi-more">전체 보기 <i class="bi bi-chevron-right"></i></a>
+						</div>
+						<div th:if="${#lists.isEmpty(d.signals)}" class="text-muted small py-4 text-center">현재 감지된 시그널이 없습니다.</div>
+						<div class="fi-signals">
+							<div class="fi-signal" th:each="sg : ${d.signals}" th:classappend="'lv-' + ${sg.level.color}">
+								<div class="d-flex align-items-center gap-2">
+									<span class="fi-signal-type" th:text="${sg.type.label}">유형</span>
+									<strong th:text="${@fmt.base(sg.symbol)}">BTC</strong>
+									<span class="ms-auto badge" th:classappend="'text-bg-' + ${sg.level.color}"
+										  th:text="'중요도 ' + ${sg.level.label}">높음</span>
+								</div>
+								<div class="fi-signal-reason" th:text="${sg.reason}">이유</div>
+								<div class="fi-signal-evidence">
+									<span th:each="e : ${sg.evidence}" th:text="${e}" class="num">지표</span>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<footer class="fi-footer">
+				데이터 출처: <span th:text="${d.source}"></span>
+				<th:block th:if="${!d.loading()}"> · 마지막 수집 <span th:text="${@fmt.time(d.lastUpdated)}"></span></th:block>
+				· 청산 금액은 바이낸스 스트림 특성상(종목당 초당 1건) 실제보다 작게 집계됩니다.
+				· 본 서비스의 정보는 투자 권유가 아니며 투자 판단의 책임은 이용자에게 있습니다.
+			</footer>
+		</div>
+	</main>
+</div>
+
+<th:block th:replace="~{fragments/layout :: scripts}"></th:block>
+<script>
+	FI.priceChart('priceChart', {
+		symbolGroup: '#chartSymbol',
+		intervalGroup: '#chartInterval'
+	});
+	FI.liveTickers(5000);
+</script>
+</body>
+</html>

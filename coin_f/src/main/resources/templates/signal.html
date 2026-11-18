@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org" data-bs-theme="dark">
+<head th:replace="~{fragments/layout :: head('매매 시그널')}"></head>
+<body>
+<div class="fi-shell">
+	<aside th:replace="~{fragments/layout :: sidebar}"></aside>
+
+	<main class="fi-main" th:with="v=${view}">
+		<header th:replace="~{fragments/layout :: topbar}"></header>
+
+		<div class="fi-content">
+			<p class="fi-lead">조건별로 시장 신호를 탐지합니다. 시그널은 매수·매도 추천이 아니라
+				<strong>어느 쪽으로 포지션이 몰렸는지</strong>와 그 근거를 보여주며, 발생 후 실제 가격이 어떻게 움직였는지 함께 기록합니다.</p>
+
+			<div th:if="${!v.ready}" class="fi-sample-note">
+				<span class="spinner-border spinner-border-sm me-1"></span> OI 데이터 수집 전이라 판정이 불완전합니다. 잠시 후 새로고침해 주세요.
+			</div>
+
+			<!-- 요약 -->
+			<div class="fi-card fi-stats fi-stats-4">
+				<div class="fi-stat">
+					<div class="fi-card-label">현재 감지</div>
+					<div class="fi-stat-value num" th:text="${#lists.size(v.current)} + '건'">0건</div>
+					<div class="fi-liq-split num">
+						<span th:each="e : ${v.currentByLevel}" th:classappend="'text-' + ${e.key.color}"
+							  th:text="${e.key.label} + ' ' + ${e.value}">높음 0</span>
+					</div>
+				</div>
+				<div class="fi-stat">
+					<div class="fi-card-label">최근 24시간 기록</div>
+					<div class="fi-stat-value num" th:text="${#aggregates.sum(v.typeStats.![count24h])} + '건'">0건</div>
+				</div>
+				<div class="fi-stat">
+					<div class="fi-card-label">최근 7일 기록</div>
+					<div class="fi-stat-value num" th:text="${#lists.size(v.history)} + '건'">0건</div>
+					<div class="fi-hint">같은 종목·유형은 4시간(대량 청산 1시간)에 1회</div>
+				</div>
+				<div class="fi-stat">
+					<div class="fi-card-label">판정 주기</div>
+					<div class="fi-stat-value num">1분</div>
+					<div class="fi-hint">시세 10초 · OI/롱숏 5분 · 청산 실시간</div>
+				</div>
+			</div>
+
+			<!-- 유형 필터 -->
+			<div class="d-flex gap-2 flex-wrap mt-3" id="typeFilter">
+				<button type="button" class="btn btn-sm fi-seg active" data-type="ALL">전체</button>
+				<button th:each="t : ${signalTypes}" type="button" class="btn btn-sm fi-seg"
+						th:data-type="${t}" th:text="${t.label}">유형</button>
+			</div>
+
+			<!-- 현재 감지 -->
+			<div class="fi-section-title mt-3 mb-2">현재 감지된 시그널</div>
+			<div th:if="${#lists.isEmpty(v.current)}" class="fi-card text-muted text-center py-4">현재 조건을 충족한 시그널이 없습니다.</div>
+			<div class="row g-3">
+				<div class="col-md-6 col-xxl-4 js-filter" th:each="sg : ${v.current}" th:data-type="${sg.type}">
+					<div class="fi-signal fi-signal-card h-100" th:classappend="'lv-' + ${sg.level.color}">
+						<div class="d-flex align-items-center gap-2">
+							<span class="fi-signal-type" th:text="${sg.type.label}">유형</span>
+							<strong th:text="${@fmt.base(sg.symbol)}">BTC</strong>
+							<span class="fi-side" th:classappend="'side-' + ${sg.crowdedSide}" th:text="${@fmt.side(sg.crowdedSide)}">롱 쏠림</span>
+							<span class="ms-auto badge" th:classappend="'text-bg-' + ${sg.level.color}" th:text="${sg.level.label}">보통</span>
+						</div>
+						<div class="fi-signal-reason" th:text="${sg.reason}">이유</div>
+						<div class="fi-signal-evidence">
+							<span th:each="e : ${sg.evidence}" th:text="${e}" class="num">지표</span>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- 이력 -->
+			<div class="fi-card mt-4">
+				<div class="fi-card-head">
+					<div>
+						<div class="fi-card-title">시그널 발생 이력</div>
+						<div class="fi-card-sub">최근 7일 · 발생가 대비 1h / 4h / 24h 후 가격 변화</div>
+					</div>
+				</div>
+				<div th:if="${!v.outcomeReady}" class="fi-sample-note mb-2">
+					<i class="bi bi-info-circle"></i>
+					발생 후 가격은 시그널 발생 1시간 뒤부터 5분 주기로 기록됩니다.
+					DB 에 <code>market_signal</code> 결과 컬럼(price_1h·4h·24h)이 추가되어 있어야 합니다.
+				</div>
+				<div class="table-responsive">
+					<table class="fi-table fi-table-head">
+						<thead>
+							<tr>
+								<th>시각</th><th>종목</th><th>유형</th><th>중요도</th><th>쏠림</th>
+								<th class="text-end">발생가</th>
+								<th class="text-end">1h</th><th class="text-end">4h</th><th class="text-end">24h</th>
+								<th class="text-end">현재</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr th:if="${#lists.isEmpty(v.history)}"><td colspan="10" class="text-muted text-center py-4">기록된 시그널이 없습니다.</td></tr>
+							<tr th:each="h : ${v.history}" class="js-filter" th:data-type="${h.type}" th:title="${h.reason}">
+								<td class="text-muted num" th:text="${@fmt.dateTime(h.detectedAt)}">11/11 10:00</td>
+								<td class="fw-semibold" th:text="${@fmt.base(h.symbol)}">BTC</td>
+								<td><span class="fi-signal-type" th:text="${h.type != null} ? ${h.type.label} : '-'">유형</span></td>
+								<td><span class="badge" th:classappend="'text-bg-' + ${h.level.color}" th:text="${h.level.label}">보통</span></td>
+								<td><span class="fi-side" th:classappend="'side-' + ${h.direction}" th:text="${@fmt.side(h.direction)}">롱</span></td>
+								<td class="text-end num" th:text="${@fmt.price(h.priceAt)}">0</td>
+								<td class="text-end num" th:classappend="${@fmt.toneOrMuted(h.change1h)}" th:text="${@fmt.pctOrDash(h.change1h)}">-</td>
+								<td class="text-end num" th:classappend="${@fmt.toneOrMuted(h.change4h)}" th:text="${@fmt.pctOrDash(h.change4h)}">-</td>
+								<td class="text-end num" th:classappend="${@fmt.toneOrMuted(h.change24h)}" th:text="${@fmt.pctOrDash(h.change24h)}">-</td>
+								<td class="text-end num" th:classappend="${@fmt.toneOrMuted(h.changeNow)}" th:text="${@fmt.pctOrDash(h.changeNow)}">-</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</div>
+
+			<div class="row g-3 mt-0">
+				<!-- 유형별 통계 -->
+				<div class="col-xl-7">
+					<div class="fi-card h-100">
+						<div class="fi-card-head">
+							<div>
+								<div class="fi-card-title">유형별 통계 (최근 7일)</div>
+								<div class="fi-card-sub">참고용 요약 · 승률·MDD 등 정식 검증은 <a href="/backtest" class="fi-more">백테스트</a></div>
+							</div>
+						</div>
+						<div class="table-responsive">
+							<table class="fi-table fi-table-head">
+								<thead>
+									<tr>
+										<th>유형</th>
+										<th class="text-end">24h</th><th class="text-end">7일</th>
+										<th class="text-end">평균 4h 후</th><th class="text-end">평균 24h 후</th>
+										<th class="text-end" title="쏠린 쪽의 반대로 24시간 뒤 가격이 움직인 비율">쏠림 반대 비율</th>
+									</tr>
+								</thead>
+								<tbody>
+									<tr th:each="t : ${v.typeStats}">
+										<td><span class="fi-signal-type" th:text="${t.type.label}">유형</span></td>
+										<td class="text-end num" th:text="${t.count24h}">0</td>
+										<td class="text-end num" th:text="${t.count7d}">0</td>
+										<td class="text-end num" th:classappend="${@fmt.toneOrMuted(t.avgChange4h)}" th:text="${@fmt.pctOrDash(t.avgChange4h)}">-</td>
+										<td class="text-end num" th:classappend="${@fmt.toneOrMuted(t.avgChange24h)}" th:text="${@fmt.pctOrDash(t.avgChange24h)}">-</td>
+										<td class="text-end num">
+											<span th:text="${t.contrarianRate24h != null} ? ${#numbers.formatDecimal(t.contrarianRate24h, 1, 0)} + '%' : '-'">-</span>
+											<span class="fi-hint" th:if="${t.outcomeCount > 0}" th:text="'(n=' + ${t.outcomeCount} + ')'"></span>
+										</td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+						<div class="fi-hint mt-2">표본이 적을 때(n &lt; 30)는 우연에 크게 좌우됩니다. 중립(OI 급증) 시그널은 쏠림 반대 비율에서 제외됩니다.</div>
+					</div>
+				</div>
+
+				<!-- 판정 기준 -->
+				<div class="col-xl-5">
+					<div class="fi-card h-100">
+						<div class="fi-card-head">
+							<div>
+								<div class="fi-card-title">판정 기준</div>
+								<div class="fi-card-sub">코드의 임계값을 그대로 표시</div>
+							</div>
+						</div>
+						<div class="fi-criteria" th:each="c : ${criteria}">
+							<div class="d-flex align-items-center gap-2">
+								<span class="fi-signal-type" th:text="${c.type.label}">유형</span>
+								<span class="fi-hint" th:text="'중요도 ' + ${c.level}"></span>
+							</div>
+							<div class="small mt-1" th:text="${c.rule}">기준</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<footer class="fi-footer">시그널은 시장 상태에 대한 정보이며 투자 권유가 아닙니다. 과거 결과가 미래 수익을 보장하지 않습니다.</footer>
+		</div>
+	</main>
+</div>
+
+<th:block th:replace="~{fragments/layout :: scripts}"></th:block>
+<script>
+	// 유형 필터 (현재 감지 카드 + 이력 표 공통)
+	document.getElementById('typeFilter').addEventListener('click', e => {
+		const btn = e.target.closest('button');
+		if (!btn) return;
+		document.querySelectorAll('#typeFilter button').forEach(b => b.classList.toggle('active', b === btn));
+		const type = btn.dataset.type;
+		document.querySelectorAll('.js-filter').forEach(el =>
+			el.classList.toggle('d-none', type !== 'ALL' && el.dataset.type !== type));
+	});
+	// 1분마다 새로고침 (판정 주기와 동일)
+	setTimeout(() => location.reload(), 60_000);
+</script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<body>
+
+<!-- AI 분석 리포트 본문 (r = AiReportService.StoredReport) -->
+<!-- 이름을 body 로 하면 <body> 태그와 충돌하므로 reportBody -->
+<div th:fragment="reportBody(r)" class="fi-report">
+	<div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+		<span class="fi-heat" th:classappend="'heat-' + ${r.levelColor()}" th:text="${r.report.overheatLevel}">중립</span>
+		<span class="fi-hint" th:text="${r.report.overheatReason}">근거</span>
+		<span class="ms-auto fi-hint num" th:text="${@fmt.dateTime(r.createdAt)} + ' 생성'">11/11 10:00 생성</span>
+	</div>
+
+	<div class="fi-report-label">시장 상황 요약</div>
+	<p class="fi-report-summary" th:text="${r.report.summary}">요약</p>
+
+	<div class="fi-report-label">시나리오</div>
+	<div class="row g-2 mb-3">
+		<div class="col-lg-4" th:each="sc : ${r.report.scenarios}">
+			<div class="fi-scenario h-100" th:classappend="'sc-' + ${sc.direction}">
+				<div class="fi-scenario-title">
+					<i class="bi" th:classappend="${sc.direction == 'UP'} ? 'bi-arrow-up-right' : (${sc.direction == 'DOWN'} ? 'bi-arrow-down-right' : 'bi-compass')"></i>
+					<span th:text="${sc.title}">시나리오</span>
+				</div>
+				<div class="small" th:text="${sc.text}">내용</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="fi-report-label">주요 위험 요소</div>
+	<ul class="fi-risks">
+		<li th:each="risk : ${r.report.risks}" th:text="${risk}">위험</li>
+	</ul>
+
+	<details class="fi-input mt-2">
+		<summary>분석에 사용한 지표 (입력 스냅샷)</summary>
+		<pre th:text="${r.inputJson}">{}</pre>
+	</details>
+</div>
+
+</body>
+</html>
