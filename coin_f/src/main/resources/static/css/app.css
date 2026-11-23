@@ -195,11 +195,9 @@ body {
 /* ---------- Coin detail ---------- */
 .fi-coin-price { font-size: 32px; font-weight: 800; letter-spacing: -.6px; }
 .fi-candle-wrap { position: relative; height: 440px; }
-.fi-chart-sm { height: 200px; }
 .fi-chart-md { height: 260px; }
 .fi-section-title { font-weight: 700; font-size: 15px; }
 .fi-chart-stat { text-align: right; font-size: 13px; }
-.fi-taker-summary { font-size: 13px; }
 .fi-ls-bar-sm { height: 6px; border-radius: 3px; }
 @media (max-width: 575.98px) {
 	.fi-candle-wrap { height: 320px; }

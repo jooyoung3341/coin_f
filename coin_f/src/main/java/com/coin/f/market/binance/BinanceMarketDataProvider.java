@@ -237,6 +237,11 @@ public class BinanceMarketDataProvider implements MarketDataProvider {
 		return trackedSymbols;
 	}
 
+	/** 첫 느린 수집이 끝나 추적 종목(상위 N 포함)이 확정됐는지 */
+	public boolean isUniverseReady() {
+		return slow != null;
+	}
+
 	/** 코인 USDT 무기한 선물인지 (주식·원자재 TRADIFI_PERPETUAL 제외). 목록 로딩 전에는 false */
 	public boolean isCryptoPerpetual(String symbol) {
 		return tradable.contains(symbol);
@@ -442,10 +447,9 @@ public class BinanceMarketDataProvider implements MarketDataProvider {
 				client.klines(symbol, "1h", hours).stream().map(k -> new TimeValue(k.openTime(), k.close())).toList(),
 				client.openInterestHist(symbol, "1h", futuresLimit).stream()
 						.map(o -> new TimeValue(o.timestamp(), o.sumOpenInterestValue())).toList(),
-				client.fundingRateHistory(symbol, Math.min(1000, hours)).stream()
-						.filter(f -> f.fundingTime() >= System.currentTimeMillis() - hours * 3_600_000L)
-						.map(f -> new TimeValue(f.fundingTime(), f.fundingRate())).toList(),
 				client.globalLongShortAccountRatio(symbol, "1h", futuresLimit).stream()
+						.map(r -> new TimeValue(r.timestamp(), r.longAccount())).toList(),
+				client.topLongShortPositionRatio(symbol, "1h", futuresLimit).stream()
 						.map(r -> new TimeValue(r.timestamp(), r.longAccount())).toList()));
 	}
 

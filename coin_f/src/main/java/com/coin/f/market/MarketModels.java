@@ -22,10 +22,11 @@ public final class MarketModels {
 
 	/**
 	 * 1시간 단위 추이 묶음 (시간 오름차순)
-	 * @param longShort 롱 계정 비율 (0~1)
+	 * @param longShort 전체 계정 기준 롱 비율 (0~1)
+	 * @param topLongShort 탑트레이더(상위 20%) 포지션 기준 롱 비율 (0~1)
 	 */
-	public record HistorySeries(List<TimeValue> price, List<TimeValue> openInterest, List<TimeValue> funding,
-			List<TimeValue> longShort) {
+	public record HistorySeries(List<TimeValue> price, List<TimeValue> openInterest, List<TimeValue> longShort,
+			List<TimeValue> topLongShort) {
 	}
 
 	/** 24시간 상세 시세 (고가·저가·체결 건수 포함) */

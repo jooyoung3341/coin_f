@@ -18,7 +18,7 @@ import com.coin.f.storage.Rows.TimeValue;
 /**
  * 코인 상세 분석 (5단계)
  *  - 현재 상태: 메모리 스냅샷 (10초~5분 주기 수집)
- *  - 추이: DB (price_candle / open_interest / funding_rate / long_short_ratio)
+ *  - 추이: DB (price_candle / open_interest / long_short_ratio[GLOBAL_ACCOUNT, TOP_POSITION])
  */
 @Service
 public class CoinService {
@@ -60,11 +60,12 @@ public class CoinService {
 		if (price.size() < expected / 2 || oi.size() < expected / 2) {
 			HistorySeries live = provider.liveHistory(symbol, d);
 			if (live != null && !live.price().isEmpty()) {
-				return new CoinHistory(live.price(), live.openInterest(), live.funding(), live.longShort(), "LIVE");
+				return new CoinHistory(live.price(), live.openInterest(), live.longShort(), live.topLongShort(),
+						"LIVE");
 			}
 		}
-		return new CoinHistory(price, oi, recorder.fundingHistory(symbol, since),
-				recorder.longShortHistory(symbol, "1h", since), "DB");
+		return new CoinHistory(price, oi, recorder.longShortHistory(symbol, "GLOBAL_ACCOUNT", "1h", since),
+				recorder.longShortHistory(symbol, "TOP_POSITION", "1h", since), "DB");
 	}
 
 	public record CoinSummary(String symbol, Ticker ticker, FundingRate funding, OpenInterestChange openInterest,
@@ -72,11 +73,13 @@ public class CoinService {
 	}
 
 	/**
-	 * 모든 값은 시간 오름차순. longShort 는 롱 계정 비율(0~1)
+	 * 모든 값은 시간 오름차순, 롱 비율은 0~1
+	 * @param longShort 전체 계정 기준 롱 비율
+	 * @param topLongShort 탑트레이더(상위 20%) 포지션 기준 롱 비율
 	 * @param source DB(저장 이력) 또는 LIVE(거래소 직접 조회)
 	 */
-	public record CoinHistory(List<TimeValue> price, List<TimeValue> openInterest, List<TimeValue> funding,
-			List<TimeValue> longShort, String source) {
+	public record CoinHistory(List<TimeValue> price, List<TimeValue> openInterest, List<TimeValue> longShort,
+			List<TimeValue> topLongShort, String source) {
 	}
 
 	/** 코인 상세를 볼 수 있는 종목 (기본 종목 또는 시가총액 기준 통과) */

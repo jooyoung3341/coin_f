@@ -121,18 +121,6 @@
 				<div id="candleChart" class="fi-candle-wrap"></div>
 			</div>
 
-			<!-- 매수·매도 거래량 -->
-			<div class="fi-card mt-3">
-				<div class="fi-card-head">
-					<div>
-						<div class="fi-card-title">매수 · 매도 거래량</div>
-						<div class="fi-card-sub">시장가(테이커) 기준 · 최근 60개 캔들 · 위 차트와 같은 구간</div>
-					</div>
-					<div class="fi-taker-summary num" id="takerSummary"></div>
-				</div>
-				<div class="fi-chart-wrap fi-chart-sm"><canvas id="takerChart"></canvas></div>
-			</div>
-
 			<!-- 추이 -->
 			<div class="d-flex justify-content-between align-items-center mt-4 mb-2">
 				<div class="fi-section-title">지표 추이 <span class="fi-hint" id="historySource">1시간 단위 · DB 저장 데이터</span></div>
@@ -160,24 +148,24 @@
 					<div class="fi-card h-100">
 						<div class="fi-card-head">
 							<div>
-								<div class="fi-card-title">펀딩비 추이</div>
-								<div class="fi-card-sub">정산 확정값 · ±0.03% 이상 과열</div>
+								<div class="fi-card-title">롱 · 숏 비율 추이 — 전체 계정</div>
+								<div class="fi-card-sub">롱 계정 수 비율 · 점선 = 평상시(70%) / 과열 기준(80%)</div>
 							</div>
-							<div class="fi-chart-stat num" id="fundingStat"></div>
+							<div class="fi-chart-stat num" id="lsStat"></div>
 						</div>
-						<div class="fi-chart-wrap fi-chart-md"><canvas id="fundingChart"></canvas></div>
+						<div class="fi-chart-wrap fi-chart-md"><canvas id="lsChart"></canvas></div>
 					</div>
 				</div>
 				<div class="col-xl-6">
 					<div class="fi-card h-100">
 						<div class="fi-card-head">
 							<div>
-								<div class="fi-card-title">롱 · 숏 비율 추이</div>
-								<div class="fi-card-sub">롱 계정 비율 · 점선 = 평상시(70%) / 과열 기준(80%)</div>
+								<div class="fi-card-title">롱 · 숏 비율 추이 — 탑트레이더</div>
+								<div class="fi-card-sub">상위 20% 트레이더 포지션 규모 기준 롱 비율 · 점선 = 50%</div>
 							</div>
-							<div class="fi-chart-stat num" id="lsStat"></div>
+							<div class="fi-chart-stat num" id="topLsStat"></div>
 						</div>
-						<div class="fi-chart-wrap fi-chart-md"><canvas id="lsChart"></canvas></div>
+						<div class="fi-chart-wrap fi-chart-md"><canvas id="topLsChart"></canvas></div>
 					</div>
 				</div>
 				<div class="col-xl-6">

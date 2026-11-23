@@ -184,8 +184,13 @@ public class MarketDataRecorder {
 	}
 
 	public List<TimeValue> longShortHistory(String symbol, String period, long since) {
+		return longShortHistory(symbol, "GLOBAL_ACCOUNT", period, since);
+	}
+
+	/** @param ratioType GLOBAL_ACCOUNT(전체 계정) 또는 TOP_POSITION(탑트레이더 포지션) */
+	public List<TimeValue> longShortHistory(String symbol, String ratioType, String period, long since) {
 		return query("롱숏 이력 조회", symbol,
-				id -> mapper.selectLongShortHistory(id, "GLOBAL_ACCOUNT", period, since));
+				id -> mapper.selectLongShortHistory(id, ratioType, period, since));
 	}
 
 	public List<SymbolTimeValue> openInterestSince(String period, long since) {

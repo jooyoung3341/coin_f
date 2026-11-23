@@ -61,7 +61,6 @@
 			rows.filter(r => r.openTime >= lastCandleTime).forEach(r => { candles.update(toCandle(r)); volume.update(toVol(r)); });
 		}
 		lastCandleTime = rows[rows.length - 1].openTime;
-		renderTaker(rows);
 	}
 
 	document.getElementById('candleInterval').addEventListener('click', e => {
@@ -72,47 +71,6 @@
 		loadCandles(true);
 	});
 	setInterval(() => loadCandles(false), 10_000);
-
-	/* ============================================================ 매수·매도 */
-	const takerChart = new Chart(document.getElementById('takerChart'), {
-		type: 'bar',
-		data: { labels: [], datasets: [
-			{ label: '시장가 매수', data: [], backgroundColor: UP_A, stack: 's' },
-			{ label: '시장가 매도', data: [], backgroundColor: DOWN_A, stack: 's' }
-		] },
-		options: {
-			responsive: true, maintainAspectRatio: false, animation: false,
-			interaction: { mode: 'index', intersect: false },
-			plugins: {
-				legend: { display: false },
-				tooltip: { callbacks: { label: c => ` ${c.dataset.label} ${FI.fmtUsd(Math.abs(c.parsed.y))}` } }
-			},
-			scales: {
-				x: { stacked: true, grid: { display: false }, ticks: { color: C.muted, maxTicksLimit: 8, maxRotation: 0 } },
-				y: { stacked: true, grid: { color: C.grid }, ticks: { color: C.muted, callback: v => FI.fmtUsd(Math.abs(v)) } }
-			}
-		}
-	});
-
-	function renderTaker(rows) {
-		const recent = rows.slice(-60);
-		const buys = recent.map(r => r.takerBuyVolume * r.close);
-		const sells = recent.map(r => (r.volume - r.takerBuyVolume) * r.close);
-		takerChart.data.labels = recent.map(r => {
-			const d = new Date(r.openTime);
-			return interval === '1h' ? `${d.getDate()}일 ${p2(d.getHours())}시` : `${p2(d.getHours())}:${p2(d.getMinutes())}`;
-		});
-		takerChart.data.datasets[0].data = buys;
-		takerChart.data.datasets[1].data = sells.map(v => -v); // 아래로 대칭 표시
-		takerChart.update();
-
-		const b = buys.reduce((a, x) => a + x, 0);
-		const s = sells.reduce((a, x) => a + x, 0);
-		const share = b + s > 0 ? b / (b + s) * 100 : 50;
-		document.getElementById('takerSummary').innerHTML =
-			`<span class="text-up">매수 ${share.toFixed(1)}%</span> · <span class="text-down">매도 ${(100 - share).toFixed(1)}%</span>` +
-			`<span class="text-muted"> · 순매수 ${b - s >= 0 ? '+' : '-'}${FI.fmtUsd(Math.abs(b - s))}</span>`;
-	}
 
 	/* ============================================================ 추이 */
 	const baseOpts = (yTicks) => ({
@@ -137,24 +95,25 @@
 		options: oiOpts
 	});
 
-	const fundingOpts = baseOpts(v => v.toFixed(3) + '%');
-	fundingOpts.plugins.tooltip = { callbacks: { label: c => ` 펀딩비 ${pct(c.parsed.y, 4)}` } };
-	const fundingChart = new Chart(document.getElementById('fundingChart'), {
-		type: 'bar',
-		data: { labels: [], datasets: [{ label: '펀딩비', data: [], backgroundColor: [] }] },
-		options: fundingOpts
-	});
+	const lsOpts = () => {
+		const o = baseOpts(v => v + '%');
+		o.plugins.tooltip = { filter: i => i.datasetIndex === 0, callbacks: { label: c => ` 롱 ${c.parsed.y.toFixed(1)}% / 숏 ${(100 - c.parsed.y).toFixed(1)}%` } };
+		return o;
+	};
+	const LS_LINE = { label: '롱 비율', data: [], borderColor: C.up, backgroundColor: 'rgba(22,199,132,0.10)', fill: true, borderWidth: 1.5, pointRadius: 0, tension: 0.2 };
+	const refLine = (label, color) => ({ label, data: [], borderColor: color, borderDash: [4, 4], borderWidth: 1, pointRadius: 0 });
 
-	const lsOpts = baseOpts(v => v + '%');
-	lsOpts.plugins.tooltip = { filter: i => i.datasetIndex === 0, callbacks: { label: c => ` 롱 ${c.parsed.y.toFixed(1)}% / 숏 ${(100 - c.parsed.y).toFixed(1)}%` } };
+	// 전체 계정: 평상시 70% / 과열 80%
 	const lsChart = new Chart(document.getElementById('lsChart'), {
 		type: 'line',
-		data: { labels: [], datasets: [
-			{ label: '롱 비율', data: [], borderColor: C.up, backgroundColor: 'rgba(22,199,132,0.10)', fill: true, borderWidth: 1.5, pointRadius: 0, tension: 0.2 },
-			{ label: '평상시', data: [], borderColor: 'rgba(138,147,166,0.5)', borderDash: [4, 4], borderWidth: 1, pointRadius: 0 },
-			{ label: '과열', data: [], borderColor: 'rgba(234,57,67,0.6)', borderDash: [4, 4], borderWidth: 1, pointRadius: 0 }
-		] },
-		options: lsOpts
+		data: { labels: [], datasets: [{ ...LS_LINE }, refLine('평상시', 'rgba(138,147,166,0.5)'), refLine('과열', 'rgba(234,57,67,0.6)')] },
+		options: lsOpts()
+	});
+	// 탑트레이더(포지션): 50% 기준선
+	const topLsChart = new Chart(document.getElementById('topLsChart'), {
+		type: 'line',
+		data: { labels: [], datasets: [{ ...LS_LINE }, refLine('50%', 'rgba(138,147,166,0.5)')] },
+		options: lsOpts()
 	});
 
 	function setStat(id, html) { document.getElementById(id).innerHTML = html; }
@@ -191,31 +150,22 @@
 				`<div class="fi-hint">${oiPriceReading(oiChg, pChg)}</div>`);
 		} else setStat('oiStat', EMPTY);
 
-		// 펀딩비 (% 단위)
-		const rates = h.funding.map(p => p.value * 100);
-		fundingChart.data.labels = h.funding.map(p => fmtHour(p.ts));
-		fundingChart.data.datasets[0].data = rates;
-		fundingChart.data.datasets[0].backgroundColor = rates.map(v =>
-			Math.abs(v) >= 0.03 ? (v > 0 ? C.up : C.down) : (v >= 0 ? UP_A : DOWN_A));
-		fundingChart.update();
-		if (rates.length) {
-			const avg = rates.reduce((a, x) => a + x, 0) / rates.length;
-			setStat('fundingStat', `최근 <span class="${tone(rates[rates.length - 1])}">${pct(rates[rates.length - 1], 4)}</span>` +
-				`<div class="fi-hint">기간 평균 ${pct(avg, 4)} · ${rates.length}회 정산</div>`);
-		} else setStat('fundingStat', EMPTY);
+		// 롱숏: 전체 계정 / 탑트레이더
+		renderLs(lsChart, 'lsStat', h.longShort, [70, 80]);
+		renderLs(topLsChart, 'topLsStat', h.topLongShort, [50]);
+	}
 
-		// 롱숏
-		const longs = h.longShort.map(p => p.value * 100);
-		lsChart.data.labels = h.longShort.map(p => fmtHour(p.ts));
-		lsChart.data.datasets[0].data = longs;
-		lsChart.data.datasets[1].data = longs.map(() => 70);
-		lsChart.data.datasets[2].data = longs.map(() => 80);
-		lsChart.update();
+	function renderLs(ch, statId, series, refs) {
+		const longs = series.map(p => p.value * 100);
+		ch.data.labels = series.map(p => fmtHour(p.ts));
+		ch.data.datasets[0].data = longs;
+		refs.forEach((v, i) => { ch.data.datasets[i + 1].data = longs.map(() => v); });
+		ch.update();
 		if (longs.length) {
 			const lo = Math.min(...longs), hi = Math.max(...longs);
-			setStat('lsStat', `현재 롱 <span class="text-up">${longs[longs.length - 1].toFixed(1)}%</span>` +
+			setStat(statId, `현재 롱 <span class="text-up">${longs[longs.length - 1].toFixed(1)}%</span>` +
 				`<div class="fi-hint">기간 범위 ${lo.toFixed(1)}% ~ ${hi.toFixed(1)}%</div>`);
-		} else setStat('lsStat', EMPTY);
+		} else setStat(statId, EMPTY);
 	}
 
 	/** 가격·OI 동시 변화 해석 (교과서적 해석이며 확정 신호가 아님) */

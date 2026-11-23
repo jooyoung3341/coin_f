@@ -47,6 +47,8 @@ public class BinanceHistoryCollector {
 	private final Set<String> fundingBackfilled = new HashSet<>();
 	private final Set<String> hourlyBackfilled = new HashSet<>();
 	private static final int HOURLY_BACKFILL = 500;
+	private static final long HOURLY_INTERVAL_MILLIS = 900_000;
+	private volatile long lastHourlyRun;
 
 	public BinanceHistoryCollector(BinanceClient client, BinanceMarketDataProvider provider,
 			MarketDataRecorder recorder, @Value("${app.market.symbols}") List<String> coreSymbols) {
@@ -84,17 +86,29 @@ public class BinanceHistoryCollector {
 	/**
 	 * 1시간 간격 OI·롱숏 이력 (코인 상세 추이 차트용).
 	 * 바이낸스는 최근 30일만 제공 → 처음 보는 종목은 500개(약 20일) 백필, 이후 15분마다 최근 3개.
+	 * 1분마다 확인하되, 추적 종목 확정(첫 느린 수집 완료) 전에는 건너뛰고
+	 * 15분이 지났거나 아직 백필 안 된 종목(상위 N 신규 진입 포함)이 있을 때만 실행.
 	 */
-	@Scheduled(initialDelay = 30_000, fixedDelay = 900_000)
+	@Scheduled(initialDelay = 30_000, fixedDelay = 60_000)
 	public void collectHourlyOiAndLongShort() {
-		if (!recorder.isEnabled()) {
+		if (!recorder.isEnabled() || !provider.isUniverseReady()) {
 			return;
+		}
+		boolean due = System.currentTimeMillis() - lastHourlyRun >= HOURLY_INTERVAL_MILLIS;
+		// 15분 주기가 아니면 백필 안 된 종목만 (실패 종목 재시도가 전체 재수집으로 번지지 않도록)
+		List<String> targets = due ? provider.trackedSymbols()
+				: provider.trackedSymbols().stream().filter(s -> !hourlyBackfilled.contains(s)).toList();
+		if (targets.isEmpty()) {
+			return;
+		}
+		if (due) {
+			lastHourlyRun = System.currentTimeMillis();
 		}
 		List<OpenInterestRow> oiRows = new ArrayList<>();
 		List<LongShortRow> lsRows = new ArrayList<>();
 		List<String> backfilledNow = new ArrayList<>();
 		Map<String, List<Kline>> candles = new LinkedHashMap<>();
-		for (String symbol : provider.trackedSymbols()) {
+		for (String symbol : targets) {
 			Integer sid = recorder.symbolId(symbol);
 			if (sid == null) {
 				continue;
@@ -107,6 +121,10 @@ public class BinanceHistoryCollector {
 				}
 				for (LongShortAccountRatio r : client.globalLongShortAccountRatio(symbol, "1h", limit)) {
 					lsRows.add(new LongShortRow(sid, "GLOBAL_ACCOUNT", "1h", r.timestamp(), r.longAccount(),
+							r.shortAccount(), r.longShortRatio()));
+				}
+				for (LongShortAccountRatio r : client.topLongShortPositionRatio(symbol, "1h", limit)) {
+					lsRows.add(new LongShortRow(sid, "TOP_POSITION", "1h", r.timestamp(), r.longAccount(),
 							r.shortAccount(), r.longShortRatio()));
 				}
 				// 백테스트 가격 기준: OI/롱숏과 같은 구간의 1시간봉 (기본 종목은 collectCandles 에서도 저장 — UPSERT 라 중복 무해)

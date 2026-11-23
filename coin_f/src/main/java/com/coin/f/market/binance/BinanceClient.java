@@ -82,6 +82,12 @@ public class BinanceClient {
 				new TypeReference<>() {}, symbol, period, limit);
 	}
 
+	/** 상위 20% 트레이더 포지션(보유 규모) 기준 롱숏 비율 — 응답 형식은 계정 기준과 동일 */
+	public List<LongShortAccountRatio> topLongShortPositionRatio(String symbol, String period, int limit) {
+		return get("/futures/data/topLongShortPositionRatio?symbol={s}&period={p}&limit={l}",
+				new TypeReference<>() {}, symbol, period, limit);
+	}
+
 	/** 캔들 — weight 1~10 (limit 에 비례). 응답이 배열의 배열이라 직접 변환 */
 	public List<Kline> klines(String symbol, String interval, int limit) {
 		List<List<Object>> rows = get("/fapi/v1/klines?symbol={s}&interval={i}&limit={l}",
