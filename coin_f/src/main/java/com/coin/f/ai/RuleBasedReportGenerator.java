@@ -12,6 +12,7 @@ import com.coin.f.ai.AnalysisModels.AnalysisReport;
 import com.coin.f.ai.AnalysisModels.MarketInput;
 import com.coin.f.ai.AnalysisModels.Scenario;
 import com.coin.f.ai.AnalysisModels.SymbolInput;
+import com.coin.f.ai.AnalysisModels.SymbolTrends;
 import com.coin.f.oi.OpenInterestService;
 import com.coin.f.signal.MarketSignal.SignalType;
 import com.coin.f.web.Formatters;
@@ -27,6 +28,9 @@ public class RuleBasedReportGenerator implements ReportGenerator {
 	static final double BASE_FUNDING = 0.0001;   // 바이낸스 기본 펀딩 0.01%/8h
 	static final double HOT_FUNDING = 0.0003;    // 8h 환산 ±0.03% 과열
 	static final double LONG_BASELINE = 70.0;    // 개인 롱 계정 평상시 수준
+	static final double RETAIL_LONG_CROWDED = 75.0; // 탑트레이더와 엇갈림을 볼 때 개인 롱 쏠림 기준
+	static final double LONG_TREND_FAST = 8.0;   // 롱 계정 비율 3일 변화 ±8%p 이상이면 빠른 쏠림 변화
+	static final double FUNDING_SAME = 0.00002;  // 펀딩비 차이 ±0.002% 미만은 "비슷"
 
 	private final Formatters fmt;
 
@@ -112,7 +116,7 @@ public class RuleBasedReportGenerator implements ReportGenerator {
 		boolean longCrowded = in.medianFunding8h() >= HOT_FUNDING * 0.66;
 		boolean shortCrowded = in.medianFunding8h() <= 0;
 		List<Scenario> scenarios = scenarios("BTC", in.btcPrice(), in.btcHigh24h(), in.btcLow24h(), in.btcHigh7d(),
-				in.btcLow7d(), longCrowded, shortCrowded, reading);
+				in.btcLow7d(), null, null, longCrowded, shortCrowded, reading);
 
 		// ---- 위험 요소
 		List<String> risks = new ArrayList<>();
@@ -160,6 +164,13 @@ public class RuleBasedReportGenerator implements ReportGenerator {
 		String base = in.symbol().replaceAll("USDT$", "");
 		Double oi24 = in.oiChange24h();
 		String reading = oi24 == null ? "변화 미미" : OpenInterestService.reading(in.change24h(), oi24);
+		SymbolTrends t = in.trends();
+		Double topLong = t == null ? null : t.topLongPct();
+		Double long3dChange = t == null || t.longPct3dAgo() == null || in.longPct() == null ? null
+				: in.longPct() - t.longPct3dAgo();
+		// 개인(계정 수)은 롱에 몰렸는데 큰 포지션은 숏 쪽 → 개인 롱 과밀
+		boolean retailLongVsWhales = in.longPct() != null && topLong != null
+				&& in.longPct() >= RETAIL_LONG_CROWDED && topLong < 50;
 
 		// ---- 요약
 		List<String> s = new ArrayList<>();
@@ -167,6 +178,9 @@ public class RuleBasedReportGenerator implements ReportGenerator {
 		s.add("%s 가격은 24시간 %s 움직여 %s이며, 24시간 범위는 %s ~ %s입니다."
 				.formatted(base, fmt.pct(in.change24h()), fmt.price(in.price()), fmt.price(in.low24h()),
 						fmt.price(in.high24h())));
+		if (t != null && t.ma24h() > 0 && t.ma7d() > 0) {
+			s.add(maSentence(in.price(), t.ma24h(), t.ma7d()));
+		}
 		if (in.oiUsd() != null && oi24 != null) {
 			s.add("미결제약정은 %s(1h %s · 4h %s · 24h %s)로 '%s' 국면입니다."
 					.formatted(fmt.usd(in.oiUsd()), fmt.pctOrDash(in.oiChange1h()), fmt.pctOrDash(in.oiChange4h()),
@@ -178,15 +192,37 @@ public class RuleBasedReportGenerator implements ReportGenerator {
 							fmt.funding(in.funding8h()))
 					: fmt.funding(in.funding8h());
 			s.add("펀딩비는 %s로 %s 수준입니다.".formatted(f, fundingTone(in.funding8h())));
+			if (t != null && t.fundingAvg3d() != null && t.fundingCount3d() >= 2 && in.funding() != null) {
+				double diff = in.funding() - t.fundingAvg3d();
+				s.add("최근 3일 정산 %d회 평균은 %s로, 현재 펀딩비는 평균보다 %s."
+						.formatted(t.fundingCount3d(), fmt.funding(t.fundingAvg3d()),
+								Math.abs(diff) < FUNDING_SAME ? "비슷한 수준입니다"
+										: diff > 0 ? "높아 롱 쪽 수요가 늘었습니다"
+												: "낮아 롱 쪽 수요가 줄었거나 숏이 늘었습니다"));
+			}
 		}
 		if (in.longPct() != null) {
 			s.add("롱 계정 비율은 %.1f%%로 평상시(약 70%%) %s입니다."
 					.formatted(in.longPct(), in.longPct() >= 80 ? "보다 롱 쏠림이 강한 상태"
 							: in.longPct() <= 60 ? "보다 숏 쪽으로 기운 상태" : "범위"));
+			String trend = longTrendSentence(in.longPct(), t, long3dChange);
+			if (trend != null) {
+				s.add(trend);
+			}
+		}
+		if (topLong != null) {
+			s.add(topTraderSentence(in.longPct(), topLong, t.topLongPct24hAgo(), retailLongVsWhales));
 		}
 		double taker = in.takerBuyShare24h() * 100;
 		String takerTone = taker >= 52 ? "매수 우위입니다" : taker <= 48 ? "매도 우위입니다" : "균형에 가깝습니다";
 		s.add("최근 24시간 시장가 매수 비중은 %.1f%%로 %s.".formatted(taker, takerTone));
+		if (t != null) {
+			double taker4 = t.takerBuyShare4h() * 100;
+			double d = taker4 - taker;
+			s.add("최근 4시간은 %.1f%%로 %s.".formatted(taker4,
+					d >= 3 ? "24시간 평균보다 매수세가 강해졌습니다"
+							: d <= -3 ? "24시간 평균보다 매도세가 강해졌습니다" : "24시간 흐름과 비슷합니다"));
+		}
 		double liq24 = in.liq24hLong() + in.liq24hShort();
 		if (liq24 > 0) {
 			s.add("24시간 청산은 롱 %s / 숏 %s입니다.".formatted(fmt.usd(in.liq24hLong()), fmt.usd(in.liq24hShort())));
@@ -219,15 +255,26 @@ public class RuleBasedReportGenerator implements ReportGenerator {
 			heat += 2;
 			why.add("복합 지표 시그널");
 		}
+		if (retailLongVsWhales) {
+			heat++;
+			why.add("개인 롱 %.1f%% vs 탑트레이더 롱 %.1f%%".formatted(in.longPct(), topLong));
+		}
+		if (long3dChange != null && long3dChange >= LONG_TREND_FAST) {
+			heat++;
+			why.add("롱 비율 3일 %+.1f%%p".formatted(long3dChange));
+		} else if (long3dChange != null && long3dChange <= -LONG_TREND_FAST) {
+			heat--;
+			why.add("롱 비율 3일 %+.1f%%p".formatted(long3dChange));
+		}
 		String level = level(heat);
 
 		// ---- 시나리오
 		boolean longCrowded = (in.funding8h() != null && in.funding8h() >= HOT_FUNDING)
-				|| (in.longPct() != null && in.longPct() >= 80);
+				|| (in.longPct() != null && in.longPct() >= 80) || retailLongVsWhales;
 		boolean shortCrowded = (in.funding8h() != null && in.funding8h() <= -HOT_FUNDING)
 				|| (in.longPct() != null && in.longPct() <= 45);
 		List<Scenario> scenarios = scenarios(base, in.price(), in.high24h(), in.low24h(), in.high7d(), in.low7d(),
-				longCrowded, shortCrowded, reading);
+				t == null ? null : t.high4h(), t == null ? null : t.low4h(), longCrowded, shortCrowded, reading);
 
 		// ---- 위험 요소
 		List<String> risks = new ArrayList<>();
@@ -252,6 +299,22 @@ public class RuleBasedReportGenerator implements ReportGenerator {
 			risks.add("최근 1시간 청산(%s)이 시간당 평균의 %.1f배 — 급변동이 진행 중입니다."
 					.formatted(fmt.usd(liq1h), liq1h / hourAvg));
 		}
+		if (retailLongVsWhales) {
+			risks.add("개인 계정은 롱 %.1f%%인데 탑트레이더 포지션은 롱 %.1f%%로 반대쪽 — 하락 시 개인 롱 청산이 몰릴 수 있습니다."
+					.formatted(in.longPct(), topLong));
+		}
+		if (long3dChange != null && long3dChange >= LONG_TREND_FAST) {
+			risks.add("롱 계정 비율이 3일 만에 %.1f%% → %.1f%%로 올라 롱 쏠림이 빠르게 커지고 있습니다."
+					.formatted(t.longPct3dAgo(), in.longPct()));
+		}
+		if (t != null && t.fundingAvg3d() != null && in.funding() != null && in.funding8h() != null
+				&& in.funding() - t.fundingAvg3d() >= BASE_FUNDING && in.funding8h() >= BASE_FUNDING * 1.5) {
+			risks.add("펀딩비가 3일 평균(%s)보다 높은 %s로 올라 롱 보유 비용이 빠르게 늘고 있습니다."
+					.formatted(fmt.funding(t.fundingAvg3d()), fmt.funding(in.funding())));
+		}
+		if (t != null) {
+			t.signalReasons().forEach(r -> risks.add("시그널 근거 — " + r));
+		}
 		if (risks.isEmpty()) {
 			risks.add("지표 기준으로 두드러진 위험 신호는 없습니다.");
 		}
@@ -260,14 +323,90 @@ public class RuleBasedReportGenerator implements ReportGenerator {
 				why.isEmpty() ? "두드러진 과열·냉각 요인 없음" : String.join(", ", why), risks);
 	}
 
+	/** 현재가와 24시간·7일 평균(1시간봉 종가) 비교 */
+	private String maSentence(double price, double ma24, double ma7) {
+		double d24 = (price / ma24 - 1) * 100;
+		double d7 = (price / ma7 - 1) * 100;
+		String tone;
+		if (d24 >= 0 && d7 >= 0) {
+			tone = "단기·중기 모두 평균 위에 있는 상승 흐름입니다";
+		} else if (d24 < 0 && d7 < 0) {
+			tone = "단기·중기 모두 평균 아래에 있는 약세 흐름입니다";
+		} else if (d24 >= 0) {
+			tone = "단기 반등 중이지만 중기로는 아직 평균 아래입니다";
+		} else {
+			tone = "중기 상승 흐름 안에서 단기 조정 중입니다";
+		}
+		return "현재가는 24시간 평균(%s)보다 %s, 7일 평균(%s)보다 %s에 있어 %s."
+				.formatted(fmt.price(ma24), aboveBelow(d24), fmt.price(ma7), aboveBelow(d7), tone);
+	}
+
+	private static String aboveBelow(double pct) {
+		return "%.1f%% %s".formatted(Math.abs(pct), pct >= 0 ? "위" : "아래");
+	}
+
+	/** 전체 계정 롱 비율의 24시간·3일 변화. 비교할 이력이 없으면 null */
+	private static String longTrendSentence(double now, SymbolTrends t, Double change3d) {
+		if (t == null || (t.longPct24hAgo() == null && change3d == null)) {
+			return null;
+		}
+		List<String> parts = new ArrayList<>();
+		if (t.longPct24hAgo() != null) {
+			parts.add("24시간 전 %.1f%%(%+.1f%%p)".formatted(t.longPct24hAgo(), now - t.longPct24hAgo()));
+		}
+		if (change3d != null) {
+			parts.add("3일 전 %.1f%%(%+.1f%%p)".formatted(t.longPct3dAgo(), change3d));
+		}
+		String range = t.longPctMin3d() != null && t.longPctMax3d() != null
+				? "이고 3일 범위는 %.1f ~ %.1f%%".formatted(t.longPctMin3d(), t.longPctMax3d())
+				: "";
+		String tone = change3d == null ? "3일 추이 판단에는 이력이 더 필요합니다"
+				: change3d >= 5 ? "롱 쏠림이 커지는 중입니다"
+						: change3d <= -5 ? "롱 쏠림이 풀리는 중입니다" : "뚜렷한 방향 변화는 없습니다";
+		// 예: 이전 값은 24시간 전 72.0%(+3.0%p) · 3일 전 70.0%(+5.0%p)이고 3일 범위는 69.0 ~ 76.0%로, 롱 쏠림이 커지는 중입니다.
+		return "이전 값은 %s%s로, %s.".formatted(String.join(" · ", parts), range, tone);
+	}
+
+	/** 탑트레이더(포지션) 롱 비율과 개인(계정) 롱 비율 비교 */
+	private static String topTraderSentence(Double retail, double top, Double top24hAgo, boolean retailLongVsWhales) {
+		StringBuilder b = new StringBuilder("탑트레이더(상위 20%%) 포지션 기준 롱 비율은 %.1f%%".formatted(top));
+		if (top24hAgo != null) {
+			b.append("(24시간 전 %.1f%%, %+.1f%%p)".formatted(top24hAgo, top - top24hAgo));
+		}
+		b.append("입니다.");
+		if (retail == null) {
+			return b.toString();
+		}
+		if (retailLongVsWhales) {
+			b.append(" 개인 계정은 롱에 몰려 있지만 큰 포지션은 숏 쪽이 더 많아, 개인 롱 과밀 구간으로 볼 수 있습니다.");
+		} else if (top >= 60 && retail <= 65) {
+			b.append(" 큰 포지션은 롱 쪽에 무게를 두는데 개인 계정은 상대적으로 숏 쪽이라, 개인과 큰손의 방향이 엇갈립니다.");
+		} else if (top >= 55 && retail >= LONG_BASELINE) {
+			b.append(" 개인과 큰 포지션 모두 롱 쪽으로 기울어 있습니다.");
+		} else if (top <= 45 && retail <= 60) {
+			b.append(" 개인과 큰 포지션 모두 숏 쪽으로 기울어 있습니다.");
+		} else {
+			b.append(" 개인 계정과 큰 포지션 사이에 뚜렷한 엇갈림은 없습니다.");
+		}
+		return b.toString();
+	}
+
 	// ================================================================== 공통 규칙
 
-	/** 가격대 기반 조건부 시나리오 3개: 상승 / 하락 / 지표상 무게 */
+	/**
+	 * 가격대 기반 조건부 시나리오 3개: 상승 / 하락 / 지표상 무게
+	 * @param h4 4시간 고점 (null 이면 단기 가격대 생략)
+	 * @param l4 4시간 저점
+	 */
 	private List<Scenario> scenarios(String name, double price, double h24, double l24, double h7, double l7,
-			boolean longCrowded, boolean shortCrowded, String reading) {
+			Double h4, Double l4, boolean longCrowded, boolean shortCrowded, String reading) {
 		List<Scenario> out = new ArrayList<>();
 
 		StringBuilder up = new StringBuilder();
+		// 4시간 고점이 현재가와 24시간 고점 사이에 따로 있을 때만 단기 저항으로 제시
+		if (h4 != null && price < h4 * 0.997 && h4 < h24 * 0.997) {
+			up.append("1차로 4시간 고점(%s) 돌파가 단기 반등 확인 지점이며, ".formatted(fmt.price(h4)));
+		}
 		// 숫자 뒤 조사(을/를) 오류를 피하려고 "고점(가격)" 형태로 표기
 		if (price >= h24 * 0.997) {
 			up.append("현재 24시간 고점(%s) 부근입니다. 돌파가 유지되면 ".formatted(fmt.price(h24)));
@@ -284,6 +423,9 @@ public class RuleBasedReportGenerator implements ReportGenerator {
 		out.add(new Scenario("UP", "상승 시나리오", up.toString()));
 
 		StringBuilder down = new StringBuilder();
+		if (l4 != null && price > l4 * 1.003 && l4 > l24 * 1.003) {
+			down.append("1차로 4시간 저점(%s) 이탈이 단기 약세 확인 지점이며, ".formatted(fmt.price(l4)));
+		}
 		if (price <= l24 * 1.003) {
 			down.append("현재 24시간 저점(%s) 부근입니다. 이탈이 이어지면 ".formatted(fmt.price(l24)));
 		} else {

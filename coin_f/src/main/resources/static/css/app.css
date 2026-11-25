@@ -199,6 +199,31 @@ body {
 .fi-section-title { font-weight: 700; font-size: 15px; }
 .fi-chart-stat { text-align: right; font-size: 13px; }
 .fi-ls-bar-sm { height: 6px; border-radius: 3px; }
+
+/* 현재 지표 해석 */
+.fi-ind-table td { vertical-align: middle; font-size: 13px; }
+.fi-ind-name { color: var(--fi-muted); white-space: nowrap; width: 1%; padding-right: 14px !important; }
+.fi-ind-value { white-space: nowrap; }
+.fi-ind-comment { color: #c9cfdb; }
+.fi-state { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 5px; white-space: nowrap;
+	background: var(--fi-panel-2); color: var(--fi-muted); }
+.fi-state.st-up { background: rgba(22, 199, 132, .12); color: var(--fi-up); }
+.fi-state.st-down { background: rgba(234, 57, 67, .12); color: var(--fi-down); }
+.fi-state.st-warn { background: rgba(240, 185, 11, .12); color: var(--fi-accent); }
+.fi-check-box { background: var(--fi-panel-2); border-radius: 10px; padding: 12px 14px; border-left: 3px solid var(--fi-border); height: 100%; }
+.fi-check-down { border-left-color: var(--fi-down); }
+.fi-check-up { border-left-color: var(--fi-up); }
+.fi-check-head { display: flex; justify-content: space-between; font-weight: 600; font-size: 13px; margin-bottom: 8px; }
+.fi-check-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.fi-check-list li { display: flex; gap: 8px; align-items: baseline; font-size: 12.5px; }
+.fi-check-list .bi { flex: none; }
+.fi-check-list .met { color: var(--fi-text); }
+.fi-check-list .unmet { color: var(--fi-muted); }
+.fi-check-detail { margin-left: auto; font-size: 11px; color: var(--fi-muted); white-space: nowrap; }
+@media (max-width: 767.98px) {
+	.fi-ind-table .fi-ind-comment { display: none; }
+	.fi-check-detail { white-space: normal; text-align: right; }
+}
 @media (max-width: 575.98px) {
 	.fi-candle-wrap { height: 320px; }
 	.fi-chart-stat { text-align: left; }

@@ -197,6 +197,33 @@
 				</div>
 			</div>
 
+			<!-- 현재 지표 해석 (1분마다 자동 갱신) -->
+			<div class="fi-card mt-3" id="indicatorCard">
+				<div class="fi-card-head">
+					<div>
+						<div class="fi-card-title">현재 지표 해석</div>
+						<div class="fi-card-sub">지표별 현재 상태와 하락·상승 위험 확인 조건 · 매매 추천이 아닌 지표 상태 요약</div>
+					</div>
+					<span class="fi-hint num" id="indicatorAt"></span>
+				</div>
+				<div id="indicatorBody" class="text-muted small py-3 text-center">지표를 계산하고 있습니다…</div>
+				<div class="row g-3 mt-1" id="indicatorChecks" hidden>
+					<div class="col-md-6">
+						<div class="fi-check-box fi-check-down">
+							<div class="fi-check-head"><span><i class="bi bi-arrow-down-right"></i> 하락 위험 확인</span><span class="num" id="downMet"></span></div>
+							<ul class="fi-check-list" id="downChecks"></ul>
+						</div>
+					</div>
+					<div class="col-md-6">
+						<div class="fi-check-box fi-check-up">
+							<div class="fi-check-head"><span><i class="bi bi-arrow-up-right"></i> 상승 위험 확인 (숏 스퀴즈)</span><span class="num" id="upMet"></span></div>
+							<ul class="fi-check-list" id="upChecks"></ul>
+						</div>
+					</div>
+				</div>
+				<div class="fi-hint mt-2">충족 개수가 많을수록 해당 방향으로 움직일 조건이 겹쳐 있다는 뜻이며, 방향을 보장하지 않습니다. 한쪽만 보지 말고 양쪽을 함께 확인하세요.</div>
+			</div>
+
 			<footer class="fi-footer">
 				캔들은 Binance 실시간 조회, 지표 추이는 DB 저장 데이터(추적 상위 30종목)이며 그 외 코인은 Binance 에서 직접 조회합니다(5분 캐시). 본 서비스의 정보는 투자 권유가 아니며 투자 판단의 책임은 이용자에게 있습니다.
 			</footer>

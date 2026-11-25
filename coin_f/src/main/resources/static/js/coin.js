@@ -184,6 +184,52 @@
 		loadHistory(+btn.dataset.days);
 	});
 
+	/* ============================================================ 현재 지표 해석 */
+	const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+	const fmtClock = ms => { const d = new Date(ms); return `${p2(d.getHours())}:${p2(d.getMinutes())}`; };
+
+	function checkItem(c) {
+		const icon = c.met === true ? 'bi-check-circle-fill text-up' : c.met === false ? 'bi-circle text-muted' : 'bi-dash-circle text-muted';
+		const cls = c.met === true ? 'met' : 'unmet';
+		const label = c.met === null ? `${esc(c.label)} <span class="fi-hint">(데이터 없음)</span>` : esc(c.label);
+		return `<li class="${cls}"><i class="bi ${icon}"></i><span>${label}</span><span class="fi-check-detail num">${esc(c.detail)}</span></li>`;
+	}
+
+	/** @param hotCls 과반(3개 이상) 충족 시 개수 색상 */
+	function renderChecks(listId, metId, checks, hotCls) {
+		document.getElementById(listId).innerHTML = checks.map(checkItem).join('');
+		const met = checks.filter(c => c.met === true).length;
+		const known = checks.filter(c => c.met !== null).length;
+		document.getElementById(metId).innerHTML =
+			`<span class="${met >= 3 ? hotCls : ''}">${met}</span> / ${checks.length} 충족` +
+			(known < checks.length ? ` <span class="fi-hint">(확인 가능 ${known})</span>` : '');
+	}
+
+	async function loadIndicators() {
+		let v;
+		try {
+			const res = await fetch(`/api/ai/indicators/${symbol}`);
+			if (res.status === 204) return; // 수집 전: 안내 문구 유지
+			if (!res.ok) return;
+			v = await res.json();
+		} catch (e) { return; }
+
+		const body = document.getElementById('indicatorBody');
+		body.className = '';
+		body.innerHTML = '<table class="fi-table fi-ind-table"><tbody>' + v.rows.map(r =>
+			`<tr><td class="fi-ind-name">${esc(r.name)}</td>` +
+			`<td class="fi-ind-value num">${esc(r.value)}</td>` +
+			`<td><span class="fi-state st-${esc(r.tone)}">${esc(r.state)}</span></td>` +
+			`<td class="fi-ind-comment">${esc(r.comment)}</td></tr>`).join('') + '</tbody></table>';
+
+		renderChecks('downChecks', 'downMet', v.downChecks, 'text-down');
+		renderChecks('upChecks', 'upMet', v.upChecks, 'text-up');
+		document.getElementById('indicatorChecks').hidden = false;
+		document.getElementById('indicatorAt').textContent = `${fmtClock(v.at)} 기준 · 1분마다 갱신`;
+	}
+
 	loadCandles(true);
 	loadHistory(+document.querySelector('#historyRange .active').dataset.days);
+	loadIndicators();
+	setInterval(loadIndicators, 60_000);
 })();
